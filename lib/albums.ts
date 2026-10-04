@@ -65,3 +65,79 @@ export function deleteAlbum(id: string): void {
   const updated = current.filter((a) => a.id !== id);
   saveStoredAlbums(updated);
 }
+
+/**
+ * Add photo IDs to an existing album without creating duplicates.
+ */
+export function addPhotosToAlbum(albumId: string, photoIds: string[]): Album | null {
+  const current = getStoredAlbums();
+  const index = current.findIndex((a) => a.id === albumId);
+  if (index === -1) return null;
+
+  const existing = current[index];
+  const mergedIds = Array.from(new Set([...existing.photoIds, ...photoIds]));
+  const updatedAlbum: Album = {
+    ...existing,
+    photoIds: mergedIds,
+    updatedAt: new Date().toISOString(),
+  };
+
+  current[index] = updatedAlbum;
+  saveStoredAlbums([...current]);
+  return updatedAlbum;
+}
+
+/**
+ * Remove a specific photo from an album.
+ */
+export function removePhotoFromAlbum(albumId: string, photoId: string): Album | null {
+  const current = getStoredAlbums();
+  const index = current.findIndex((a) => a.id === albumId);
+  if (index === -1) return null;
+
+  const existing = current[index];
+  const updatedAlbum: Album = {
+    ...existing,
+    photoIds: existing.photoIds.filter((id) => id !== photoId),
+    updatedAt: new Date().toISOString(),
+  };
+
+  current[index] = updatedAlbum;
+  saveStoredAlbums([...current]);
+  return updatedAlbum;
+}
+
+/**
+ * Toggle a photo's presence in an album.
+ */
+export function togglePhotoInAlbum(
+  albumId: string,
+  photoId: string
+): { album: Album; added: boolean } | null {
+  const current = getStoredAlbums();
+  const index = current.findIndex((a) => a.id === albumId);
+  if (index === -1) return null;
+
+  const existing = current[index];
+  const hasPhoto = existing.photoIds.includes(photoId);
+  const newPhotoIds = hasPhoto
+    ? existing.photoIds.filter((id) => id !== photoId)
+    : [...existing.photoIds, photoId];
+
+  const updatedAlbum: Album = {
+    ...existing,
+    photoIds: newPhotoIds,
+    updatedAt: new Date().toISOString(),
+  };
+
+  current[index] = updatedAlbum;
+  saveStoredAlbums([...current]);
+  return { album: updatedAlbum, added: !hasPhoto };
+}
+
+/**
+ * Returns all albums that contain the given photo ID.
+ */
+export function getAlbumsContainingPhoto(photoId: string): Album[] {
+  return getStoredAlbums().filter((album) => album.photoIds.includes(photoId));
+}

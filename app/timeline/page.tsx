@@ -22,6 +22,9 @@ import {
   Download,
   RefreshCw,
   HardDrive,
+  FolderPlus,
+  Check,
+  Trash2,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -38,6 +41,11 @@ import {
   getStoredFavorites,
   toggleStoredFavorite,
 } from '@/lib/favorites';
+import {
+  getStoredAlbums,
+  togglePhotoInAlbum,
+  Album,
+} from '@/lib/albums';
 
 export interface PhotoItem {
   id: string;
@@ -76,19 +84,53 @@ export default function TimelinePage() {
   const [activePhoto, setActivePhoto] = useState<PhotoItem | null>(null);
   const [justToggledId, setJustToggledId] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isAddToAlbumOpen, setIsAddToAlbumOpen] = useState(false);
+  const [photoToTrash, setPhotoToTrash] = useState<PhotoItem | null>(null);
+  const [isTrashing, setIsTrashing] = useState(false);
+  const [allAlbums, setAllAlbums] = useState<Album[]>([]);
 
-  // Sync favorites with shared storage
+  // Sync albums & favorites with shared storage
   useEffect(() => {
     setFavorites(getStoredFavorites());
+    setAllAlbums(getStoredAlbums());
 
     const handleFavUpdate = () => {
       setFavorites(getStoredFavorites());
     };
+    const handleAlbumsUpdate = () => {
+      setAllAlbums(getStoredAlbums());
+    };
+
     window.addEventListener('vault-favorites-updated', handleFavUpdate);
+    window.addEventListener('vault-albums-updated', handleAlbumsUpdate);
     return () => {
       window.removeEventListener('vault-favorites-updated', handleFavUpdate);
+      window.removeEventListener('vault-albums-updated', handleAlbumsUpdate);
     };
   }, []);
+
+  const handleTrashPhoto = async () => {
+    if (!photoToTrash) return;
+    setIsTrashing(true);
+    try {
+      const res = await fetch(`/api/images/${photoToTrash.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to move photo to trash');
+      setPhotos((prev) => prev.filter((p) => p.id !== photoToTrash.id));
+      setActivePhoto(null);
+      setPhotoToTrash(null);
+      window.dispatchEvent(new Event('vault-storage-updated'));
+    } catch (err: any) {
+      alert('Failed to trash photo: ' + err.message);
+    } finally {
+      setIsTrashing(false);
+    }
+  };
+
+  const handleToggleAlbum = (albumId: string) => {
+    if (!activePhoto) return;
+    togglePhotoInAlbum(albumId, activePhoto.id);
+    setAllAlbums(getStoredAlbums());
+  };
 
   // Window-level drag-and-drop listener to open upload modal
   useEffect(() => {
@@ -585,12 +627,12 @@ export default function TimelinePage() {
         </div>
       </main>
 
-      {/* ── Photo Details / Lightbox Modal ── */}
+      {/* ── Photo Details / Lightbox Modal (Enlarged Immersion View) ── */}
       <Dialog
         open={!!activePhoto}
         onOpenChange={(open) => !open && setActivePhoto(null)}
       >
-        <DialogContent className="max-w-4xl bg-[#131313]/95 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-0 overflow-hidden rounded-2xl shadow-2xl">
+        <DialogContent className="max-w-6xl xl:max-w-7xl w-[95vw] h-[90vh] max-h-[92vh] bg-[#0c0c0c]/98 backdrop-blur-3xl border-white/10 text-[#e5e2e1] p-0 overflow-hidden rounded-2xl shadow-2xl flex flex-col">
           <DialogHeader className="sr-only">
             <DialogTitle>
               {activePhoto?.caption || 'Photo Details'}
@@ -598,18 +640,24 @@ export default function TimelinePage() {
           </DialogHeader>
 
           {activePhoto && (
-            <div className="flex flex-col lg:flex-row h-full max-h-[85vh]">
-              {/* Photo Display */}
-              <div className="flex-1 bg-black/70 flex items-center justify-center p-4 relative min-h-[300px] lg:min-h-[500px]">
+            <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden">
+              {/* Spacious Large Photo Display */}
+              <div className="flex-1 bg-black/90 flex items-center justify-center p-4 md:p-8 relative h-[60vh] lg:h-full w-full overflow-hidden">
                 <img
                   src={activePhoto.src}
                   alt={activePhoto.caption}
-                  className="max-h-[60vh] lg:max-h-[75vh] w-auto max-w-full object-contain rounded-xl shadow-2xl"
+                  onError={(e) => {
+                    const fallback = `/api/images/${activePhoto.id}/view`;
+                    if (e.currentTarget.src !== window.location.origin + fallback) {
+                      e.currentTarget.src = fallback;
+                    }
+                  }}
+                  className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-2xl select-none"
                 />
               </div>
 
               {/* Inspector Metadata Sidebar */}
-              <div className="w-full lg:w-80 p-6 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-white/10 bg-[#1c1b1b]/70 overflow-y-auto">
+              <div className="w-full lg:w-84 p-6 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-white/10 bg-[#161616]/90 overflow-y-auto shrink-0">
                 <div className="flex flex-col gap-5">
                   {/* Caption & Location */}
                   <div>
@@ -678,14 +726,26 @@ export default function TimelinePage() {
 
                 {/* Action Buttons */}
                 <div className="flex flex-col gap-2.5 pt-6 mt-6 border-t border-white/10">
+                  {/* Add to Album Button */}
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsAddToAlbumOpen(true)}
+                    className="w-full glass-button rounded-xl text-xs py-5 font-semibold text-[#adc6ff] border-white/15 flex items-center justify-center gap-2 pressable"
+                  >
+                    <FolderPlus className="w-4 h-4" />
+                    <span>Add to Album</span>
+                  </Button>
+
+                  {/* Open in AI Editor */}
                   <Link href={`/editor?photoId=${activePhoto.id}`} className="w-full">
-                    <Button className="w-full py-5 btn-vault rounded-xl text-sm font-semibold flex items-center justify-center gap-2 pressable shadow-[0_0_20px_rgba(59,130,246,0.3)]">
+                    <Button className="w-full py-5 btn-vault rounded-xl text-xs font-semibold flex items-center justify-center gap-2 pressable shadow-[0_0_20px_rgba(59,130,246,0.3)]">
                       <Sparkles className="w-4 h-4" />
                       <span>Open in AI Photo Editor</span>
                     </Button>
                   </Link>
 
                   <div className="flex gap-2">
+                    {/* Favorite */}
                     <Button
                       variant="outline"
                       onClick={(e) => toggleFav(e, activePhoto.id)}
@@ -709,6 +769,7 @@ export default function TimelinePage() {
                       </span>
                     </Button>
 
+                    {/* Download */}
                     <a
                       href={activePhoto.src}
                       target="_blank"
@@ -724,11 +785,123 @@ export default function TimelinePage() {
                         <Download className="w-3.5 h-3.5" />
                       </Button>
                     </a>
+
+                    {/* Move to Trash */}
+                    <Button
+                      variant="outline"
+                      onClick={() => setPhotoToTrash(activePhoto)}
+                      className="glass-button rounded-xl text-xs px-3 text-[#8c909f] hover:text-red-400 hover:bg-red-950/20 border-white/15"
+                      title="Move to Trash"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
                 </div>
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add Photo to Album Dialog ── */}
+      <Dialog open={isAddToAlbumOpen} onOpenChange={setIsAddToAlbumOpen}>
+        <DialogContent className="max-w-md bg-[#141414]/95 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-6 rounded-2xl shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+              <FolderPlus className="w-4 h-4 text-[#3b82f6]" />
+              <span>Add to Available Albums</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-3 flex flex-col gap-2 max-h-[60vh] overflow-y-auto">
+            {allAlbums.length === 0 ? (
+              <div className="py-8 text-center text-xs text-[#8c909f] flex flex-col items-center gap-3">
+                <p>No albums created yet.</p>
+                <Link href="/create-album">
+                  <Button className="btn-vault text-xs rounded-xl px-4 py-2">
+                    Create New Album
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              allAlbums.map((album) => {
+                const isIncluded = activePhoto ? album.photoIds.includes(activePhoto.id) : false;
+                return (
+                  <div
+                    key={album.id}
+                    onClick={() => handleToggleAlbum(album.id)}
+                    className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all pressable ${
+                      isIncluded
+                        ? 'border-[#3b82f6] bg-[#3b82f6]/10 text-white'
+                        : 'border-white/10 hover:border-white/20 bg-white/[0.02]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-lg bg-black/40 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center">
+                        {album.coverPhotoUrl ? (
+                          <img src={album.coverPhotoUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <FolderPlus className="w-4 h-4 text-[#8c909f]" />
+                        )}
+                      </div>
+                      <div className="truncate">
+                        <p className="text-xs font-semibold text-white truncate">{album.title}</p>
+                        <p className="text-[10px] text-[#8c909f]">{album.photoIds.length} photos</p>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+                        isIncluded
+                          ? 'bg-[#3b82f6] text-white shadow-md'
+                          : 'border border-white/20'
+                      }`}
+                    >
+                      {isIncluded && <Check className="w-3 h-3 stroke-[3]" />}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Move to Trash Confirmation Dialog ── */}
+      <Dialog open={!!photoToTrash} onOpenChange={(open) => !open && setPhotoToTrash(null)}>
+        <DialogContent className="max-w-md bg-[#141414] border-white/10 text-[#e5e2e1] p-6 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-400" />
+              <span>Move to Trash?</span>
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-[#8c909f] mt-1 leading-relaxed">
+            This photo will be moved to Trash. You can restore it anytime or delete it permanently to free up vault storage.
+          </p>
+          <div className="flex items-center justify-end gap-2.5 mt-5">
+            <Button
+              variant="outline"
+              onClick={() => setPhotoToTrash(null)}
+              className="glass-button text-xs rounded-xl border-white/15"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isTrashing}
+              onClick={handleTrashPhoto}
+              className="bg-red-600 hover:bg-red-700 text-white text-xs rounded-xl font-semibold px-4 flex items-center gap-1.5"
+            >
+              {isTrashing ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Moving...</span>
+                </>
+              ) : (
+                <span>Move to Trash</span>
+              )}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

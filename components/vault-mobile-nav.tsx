@@ -7,7 +7,7 @@ import { LayoutDashboard, Clock, Heart, Sparkles, Upload, FolderPlus } from 'luc
 import { UploadMediaDialog } from '@/components/upload-media-dialog';
 
 interface VaultMobileNavProps {
-  currentRoute: 'dashboard' | 'timeline' | 'favorites' | 'editor' | 'albums' | 'create-album';
+  currentRoute: 'dashboard' | 'timeline' | 'favorites' | 'editor' | 'albums' | 'create-album' | 'trash';
   activeFilter?: 'all' | 'favs' | string;
   onFilterChange?: (filter: string) => void;
 }

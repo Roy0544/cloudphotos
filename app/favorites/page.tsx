@@ -24,6 +24,8 @@ import {
   RefreshCw,
   HardDrive,
   Upload,
+  FolderPlus,
+  Check,
 } from 'lucide-react';
 import { VaultSidebar } from '@/components/vault-sidebar';
 import { VaultMobileNav } from '@/components/vault-mobile-nav';
@@ -38,6 +40,11 @@ import {
   getStoredFavorites,
   toggleStoredFavorite,
 } from '@/lib/favorites';
+import {
+  getStoredAlbums,
+  togglePhotoInAlbum,
+  Album,
+} from '@/lib/albums';
 
 interface FavoritePhoto {
   id: string;
@@ -66,20 +73,51 @@ export default function FavoritesPage() {
   const [gridDensity, setGridDensity] = useState<'cozy' | 'compact'>('cozy');
   const [activePhoto, setActivePhoto] = useState<FavoritePhoto | null>(null);
   const [unfavoritingId, setUnfavoritingId] = useState<string | null>(null);
+  const [isAddToAlbumOpen, setIsAddToAlbumOpen] = useState(false);
+  const [photoToTrash, setPhotoToTrash] = useState<FavoritePhoto | null>(null);
+  const [isTrashing, setIsTrashing] = useState(false);
+  const [allAlbums, setAllAlbums] = useState<Album[]>([]);
 
-  // Sync favorites with shared storage
+  // Sync favorites & albums with shared storage
   const syncFavorites = useCallback(() => {
     setFavoriteIds(getStoredFavorites());
+    setAllAlbums(getStoredAlbums());
   }, []);
 
   useEffect(() => {
     syncFavorites();
     const handleFavUpdate = () => syncFavorites();
+    const handleAlbumsUpdate = () => setAllAlbums(getStoredAlbums());
     window.addEventListener('vault-favorites-updated', handleFavUpdate);
+    window.addEventListener('vault-albums-updated', handleAlbumsUpdate);
     return () => {
       window.removeEventListener('vault-favorites-updated', handleFavUpdate);
+      window.removeEventListener('vault-albums-updated', handleAlbumsUpdate);
     };
   }, [syncFavorites]);
+
+  const handleTrashPhoto = async () => {
+    if (!photoToTrash) return;
+    setIsTrashing(true);
+    try {
+      const res = await fetch(`/api/images/${photoToTrash.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to move photo to trash');
+      setAllPhotos((prev) => prev.filter((p) => p.id !== photoToTrash.id));
+      setActivePhoto(null);
+      setPhotoToTrash(null);
+      window.dispatchEvent(new Event('vault-storage-updated'));
+    } catch (err: any) {
+      alert('Failed to trash photo: ' + err.message);
+    } finally {
+      setIsTrashing(false);
+    }
+  };
+
+  const handleToggleAlbum = (albumId: string) => {
+    if (!activePhoto) return;
+    togglePhotoInAlbum(albumId, activePhoto.id);
+    setAllAlbums(getStoredAlbums());
+  };
 
   // Fetch real images from /api/images
   const fetchPhotos = useCallback(async () => {
@@ -428,12 +466,12 @@ export default function FavoritesPage() {
         </div>
       </main>
 
-      {/* ── Photo Details Dialog Lightbox ── */}
+      {/* ── Photo Details Dialog Lightbox (Enlarged Immersion View) ── */}
       <Dialog
         open={!!activePhoto}
         onOpenChange={(open) => !open && setActivePhoto(null)}
       >
-        <DialogContent className="max-w-4xl bg-[#131313]/95 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-0 overflow-hidden rounded-2xl shadow-2xl">
+        <DialogContent className="max-w-6xl xl:max-w-7xl w-[95vw] h-[90vh] max-h-[92vh] bg-[#0c0c0c]/98 backdrop-blur-3xl border-white/10 text-[#e5e2e1] p-0 overflow-hidden rounded-2xl shadow-2xl flex flex-col">
           <DialogHeader className="sr-only">
             <DialogTitle>
               {activePhoto?.caption || 'Favorite Memory'}
@@ -441,18 +479,24 @@ export default function FavoritesPage() {
           </DialogHeader>
 
           {activePhoto && (
-            <div className="flex flex-col lg:flex-row h-full max-h-[85vh]">
-              {/* Photo Display */}
-              <div className="flex-1 bg-black/70 flex items-center justify-center p-4 relative min-h-[300px] lg:min-h-[500px]">
+            <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden">
+              {/* Spacious Large Photo Display */}
+              <div className="flex-1 bg-black/90 flex items-center justify-center p-4 md:p-8 relative h-[60vh] lg:h-full w-full overflow-hidden">
                 <img
                   src={activePhoto.src}
                   alt={activePhoto.caption}
-                  className="max-h-[60vh] lg:max-h-[75vh] w-auto max-w-full object-contain rounded-xl shadow-2xl"
+                  onError={(e) => {
+                    const fallback = `/api/images/${activePhoto.id}/view`;
+                    if (e.currentTarget.src !== window.location.origin + fallback) {
+                      e.currentTarget.src = fallback;
+                    }
+                  }}
+                  className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-2xl select-none"
                 />
               </div>
 
               {/* Inspector Sidebar */}
-              <div className="w-full lg:w-80 p-6 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-white/10 bg-[#1c1b1b]/70 overflow-y-auto">
+              <div className="w-full lg:w-84 p-6 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-white/10 bg-[#161616]/90 overflow-y-auto shrink-0">
                 <div className="flex flex-col gap-5">
                   <div>
                     <span className="text-[10px] uppercase font-bold tracking-wider text-[#adc6ff]">
@@ -517,11 +561,21 @@ export default function FavoritesPage() {
 
                 {/* Actions */}
                 <div className="flex flex-col gap-2.5 pt-6 mt-6 border-t border-white/10">
+                  {/* Add to Album Button */}
+                  <Button
+                    variant="outline"
+                    onClick={() => setIsAddToAlbumOpen(true)}
+                    className="w-full glass-button rounded-xl text-xs py-5 font-semibold text-[#adc6ff] border-white/15 flex items-center justify-center gap-2 pressable"
+                  >
+                    <FolderPlus className="w-4 h-4" />
+                    <span>Add to Album</span>
+                  </Button>
+
                   <Link
                     href={`/editor?photoId=${activePhoto.id}`}
                     className="w-full"
                   >
-                    <Button className="w-full py-5 btn-vault rounded-xl text-sm font-semibold flex items-center justify-center gap-2 pressable shadow-[0_0_20px_rgba(59,130,246,0.3)]">
+                    <Button className="w-full py-5 btn-vault rounded-xl text-xs font-semibold flex items-center justify-center gap-2 pressable shadow-[0_0_20px_rgba(59,130,246,0.3)]">
                       <Sparkles className="w-4 h-4" />
                       <span>Open in AI Photo Studio</span>
                     </Button>
@@ -555,11 +609,123 @@ export default function FavoritesPage() {
                         <Download className="w-3.5 h-3.5" />
                       </Button>
                     </a>
+
+                    {/* Move to Trash */}
+                    <Button
+                      variant="outline"
+                      onClick={() => setPhotoToTrash(activePhoto)}
+                      className="glass-button rounded-xl text-xs px-3 text-[#8c909f] hover:text-red-400 hover:bg-red-950/20 border-white/15"
+                      title="Move to Trash"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
                 </div>
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Add to Album Dialog ── */}
+      <Dialog open={isAddToAlbumOpen} onOpenChange={setIsAddToAlbumOpen}>
+        <DialogContent className="max-w-md bg-[#141414]/95 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-6 rounded-2xl shadow-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+              <FolderPlus className="w-4 h-4 text-[#3b82f6]" />
+              <span>Add to Available Albums</span>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="py-3 flex flex-col gap-2 max-h-[60vh] overflow-y-auto">
+            {allAlbums.length === 0 ? (
+              <div className="py-8 text-center text-xs text-[#8c909f] flex flex-col items-center gap-3">
+                <p>No albums created yet.</p>
+                <Link href="/create-album">
+                  <Button className="btn-vault text-xs rounded-xl px-4 py-2">
+                    Create New Album
+                  </Button>
+                </Link>
+              </div>
+            ) : (
+              allAlbums.map((album) => {
+                const isIncluded = activePhoto ? album.photoIds.includes(activePhoto.id) : false;
+                return (
+                  <div
+                    key={album.id}
+                    onClick={() => handleToggleAlbum(album.id)}
+                    className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all pressable ${
+                      isIncluded
+                        ? 'border-[#3b82f6] bg-[#3b82f6]/10 text-white'
+                        : 'border-white/10 hover:border-white/20 bg-white/[0.02]'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-lg bg-black/40 overflow-hidden shrink-0 border border-white/10 flex items-center justify-center">
+                        {album.coverPhotoUrl ? (
+                          <img src={album.coverPhotoUrl} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                          <FolderPlus className="w-4 h-4 text-[#8c909f]" />
+                        )}
+                      </div>
+                      <div className="truncate">
+                        <p className="text-xs font-semibold text-white truncate">{album.title}</p>
+                        <p className="text-[10px] text-[#8c909f]">{album.photoIds.length} photos</p>
+                      </div>
+                    </div>
+
+                    <div
+                      className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${
+                        isIncluded
+                          ? 'bg-[#3b82f6] text-white shadow-md'
+                          : 'border border-white/20'
+                      }`}
+                    >
+                      {isIncluded && <Check className="w-3 h-3 stroke-[3]" />}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Move to Trash Confirmation Dialog ── */}
+      <Dialog open={!!photoToTrash} onOpenChange={(open) => !open && setPhotoToTrash(null)}>
+        <DialogContent className="max-w-md bg-[#141414] border-white/10 text-[#e5e2e1] p-6 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-400" />
+              <span>Move to Trash?</span>
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-[#8c909f] mt-1 leading-relaxed">
+            This photo will be moved to Trash. You can restore it anytime or delete it permanently from the Trash page.
+          </p>
+          <div className="flex items-center justify-end gap-2.5 mt-5">
+            <Button
+              variant="outline"
+              onClick={() => setPhotoToTrash(null)}
+              className="glass-button text-xs rounded-xl border-white/15"
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={isTrashing}
+              onClick={handleTrashPhoto}
+              className="bg-red-600 hover:bg-red-700 text-white text-xs rounded-xl font-semibold px-4 flex items-center gap-1.5"
+            >
+              {isTrashing ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Moving...</span>
+                </>
+              ) : (
+                <span>Move to Trash</span>
+              )}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 

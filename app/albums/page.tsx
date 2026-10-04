@@ -15,7 +15,6 @@ import {
   ArrowRight,
   Menu,
   X,
-  ExternalLink,
   Sparkles,
   Camera,
   MapPin,
@@ -23,6 +22,8 @@ import {
   Share2,
   Download,
   AlertCircle,
+  CheckCircle2,
+  Check,
 } from 'lucide-react';
 import { VaultSidebar } from '@/components/vault-sidebar';
 import { VaultMobileNav } from '@/components/vault-mobile-nav';
@@ -36,13 +37,15 @@ import {
 import {
   getStoredAlbums,
   deleteAlbum,
+  addPhotosToAlbum,
+  removePhotoFromAlbum,
   Album,
 } from '@/lib/albums';
-import { toggleStoredFavorite, getStoredFavorites } from '@/lib/favorites';
 
 interface RealPhoto {
   id: string;
   url: string;
+  viewUrl: string;
   name: string;
   date: string;
 }
@@ -51,6 +54,7 @@ export default function AlbumsPage() {
   const router = useRouter();
 
   const [albums, setAlbums] = useState<Album[]>([]);
+  const [allPhotos, setAllPhotos] = useState<RealPhoto[]>([]);
   const [allPhotosMap, setAllPhotosMap] = useState<Map<string, RealPhoto>>(
     new Map()
   );
@@ -58,11 +62,22 @@ export default function AlbumsPage() {
   const [activeAlbum, setActiveAlbum] = useState<Album | null>(null);
   const [activePhoto, setActivePhoto] = useState<RealPhoto | null>(null);
   const [albumToDelete, setAlbumToDelete] = useState<string | null>(null);
+  const [isAddPhotosOpen, setIsAddPhotosOpen] = useState(false);
+  const [selectedPhotoIdsToAdd, setSelectedPhotoIdsToAdd] = useState<Set<string>>(
+    new Set()
+  );
 
   // Sync albums from storage
   const syncAlbums = useCallback(() => {
-    setAlbums(getStoredAlbums());
-  }, []);
+    const loaded = getStoredAlbums();
+    setAlbums(loaded);
+    if (activeAlbum) {
+      const refreshed = loaded.find((a) => a.id === activeAlbum.id);
+      if (refreshed) {
+        setActiveAlbum(refreshed);
+      }
+    }
+  }, [activeAlbum]);
 
   useEffect(() => {
     syncAlbums();
@@ -78,20 +93,25 @@ export default function AlbumsPage() {
     fetch('/api/images')
       .then((res) => (res.ok ? res.json() : { images: [] }))
       .then((data) => {
+        const list: RealPhoto[] = [];
         const map = new Map<string, RealPhoto>();
         (data.images || []).forEach((img: any) => {
           const d = new Date(img.createdAt);
-          map.set(img.id, {
+          const p: RealPhoto = {
             id: img.id,
             url: img.signedUrl || `/api/images/${img.id}/view`,
+            viewUrl: `/api/images/${img.id}/view`,
             name: (img.originalFilename || 'Photo').replace(/\.[^/.]+$/, ''),
             date: d.toLocaleDateString('en-US', {
               month: 'short',
               day: 'numeric',
               year: 'numeric',
             }),
-          });
+          };
+          list.push(p);
+          map.set(img.id, p);
         });
+        setAllPhotos(list);
         setAllPhotosMap(map);
       })
       .catch((err) => console.error('Failed to load photos map:', err));
@@ -106,6 +126,32 @@ export default function AlbumsPage() {
     setAlbumToDelete(null);
   };
 
+  const handleOpenAddPhotos = () => {
+    setSelectedPhotoIdsToAdd(new Set());
+    setIsAddPhotosOpen(true);
+  };
+
+  const handleConfirmAddPhotos = () => {
+    if (!activeAlbum || selectedPhotoIdsToAdd.size === 0) return;
+    const updated = addPhotosToAlbum(
+      activeAlbum.id,
+      Array.from(selectedPhotoIdsToAdd)
+    );
+    if (updated) {
+      setActiveAlbum(updated);
+      syncAlbums();
+    }
+    setIsAddPhotosOpen(false);
+  };
+
+  const handleRemovePhoto = (albumId: string, photoId: string) => {
+    const updated = removePhotoFromAlbum(albumId, photoId);
+    if (updated) {
+      setActiveAlbum(updated);
+      syncAlbums();
+    }
+  };
+
   const filteredAlbums = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return albums;
@@ -115,6 +161,13 @@ export default function AlbumsPage() {
         a.description.toLowerCase().includes(q)
     );
   }, [albums, search]);
+
+  // Available photos to add (excluding photos already in active album)
+  const availablePhotosToAdd = useMemo(() => {
+    if (!activeAlbum) return [];
+    const currentSet = new Set(activeAlbum.photoIds);
+    return allPhotos.filter((p) => !currentSet.has(p.id));
+  }, [activeAlbum, allPhotos]);
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#0a0a0a] text-[#e5e2e1] font-[family-name:var(--font-inter)] selection:bg-[#4d8eff]/30 selection:text-white">
@@ -352,17 +405,34 @@ export default function AlbumsPage() {
               )}
             </div>
 
-            <span className="text-xs font-mono bg-[#3b82f6]/20 text-[#adc6ff] border border-[#3b82f6]/30 px-3 py-1 rounded-full">
-              {activeAlbum?.photoIds.length}{' '}
-              {activeAlbum?.photoIds.length === 1 ? 'photo' : 'photos'}
-            </span>
+            <div className="flex items-center gap-2.5">
+              <Button
+                onClick={handleOpenAddPhotos}
+                className="btn-vault text-xs rounded-xl px-3.5 py-1.5 font-semibold flex items-center gap-1.5 shadow-[0_0_15px_rgba(59,130,246,0.3)] pressable"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Photos</span>
+              </Button>
+
+              <span className="text-xs font-mono bg-[#3b82f6]/20 text-[#adc6ff] border border-[#3b82f6]/30 px-3 py-1 rounded-full">
+                {activeAlbum?.photoIds.length}{' '}
+                {activeAlbum?.photoIds.length === 1 ? 'photo' : 'photos'}
+              </span>
+            </div>
           </DialogHeader>
 
           {/* Grid of photos in active album */}
           <div className="flex-1 overflow-y-auto py-4">
             {activeAlbum && activeAlbum.photoIds.length === 0 ? (
-              <div className="py-16 text-center text-xs text-[#8c909f]">
-                No photos in this album yet.
+              <div className="py-16 text-center text-xs text-[#8c909f] flex flex-col items-center justify-center gap-3">
+                <p>No photos in this album yet.</p>
+                <Button
+                  onClick={handleOpenAddPhotos}
+                  className="btn-vault text-xs rounded-xl px-4 py-2 flex items-center gap-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Photos Now</span>
+                </Button>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -379,10 +449,28 @@ export default function AlbumsPage() {
                       <img
                         src={photo.url}
                         alt={photo.name}
+                        onError={(e) => {
+                          if (e.currentTarget.src !== window.location.origin + photo.viewUrl) {
+                            e.currentTarget.src = photo.viewUrl;
+                          }
+                        }}
                         loading="lazy"
                         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-end">
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-between">
+                        <div className="flex justify-end">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (activeAlbum) handleRemovePhoto(activeAlbum.id, photo.id);
+                            }}
+                            className="bg-black/60 hover:bg-red-600/80 text-white/80 hover:text-white p-1 rounded-md transition-colors"
+                            title="Remove from album"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
                         <p className="text-[10px] text-white font-medium truncate">
                           {photo.name}
                         </p>
@@ -396,37 +484,137 @@ export default function AlbumsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Single Photo Preview Modal within Album ── */}
+      {/* ── Add Photos to Album Dialog ── */}
+      <Dialog open={isAddPhotosOpen} onOpenChange={setIsAddPhotosOpen}>
+        <DialogContent className="max-w-3xl bg-[#141414]/95 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-6 rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
+          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-white/10 space-y-0">
+            <div>
+              <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+                <Plus className="w-4 h-4 text-[#3b82f6]" />
+                <span>Add Photos to &ldquo;{activeAlbum?.title}&rdquo;</span>
+              </DialogTitle>
+              <p className="text-xs text-[#8c909f] mt-0.5">
+                Select photos from your vault to add to this collection
+              </p>
+            </div>
+
+            <Button
+              disabled={selectedPhotoIdsToAdd.size === 0}
+              onClick={handleConfirmAddPhotos}
+              className="btn-vault text-xs rounded-xl px-4 py-2 font-semibold flex items-center gap-1.5 shadow-[0_0_15px_rgba(59,130,246,0.3)] disabled:opacity-50"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Add ({selectedPhotoIdsToAdd.size})</span>
+            </Button>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto py-4">
+            {availablePhotosToAdd.length === 0 ? (
+              <div className="py-16 text-center text-xs text-[#8c909f]">
+                All photos in your vault are already in this album!
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                {availablePhotosToAdd.map((photo) => {
+                  const isSelected = selectedPhotoIdsToAdd.has(photo.id);
+
+                  return (
+                    <div
+                      key={photo.id}
+                      onClick={() => {
+                        setSelectedPhotoIdsToAdd((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(photo.id)) next.delete(photo.id);
+                          else next.add(photo.id);
+                          return next;
+                        });
+                      }}
+                      className={`aspect-square relative rounded-xl overflow-hidden cursor-pointer group border select-none transition-all ${
+                        isSelected
+                          ? 'border-[#3b82f6] ring-2 ring-[#3b82f6] scale-[0.97]'
+                          : 'border-white/10 hover:border-white/30'
+                      }`}
+                    >
+                      <img
+                        src={photo.url}
+                        alt={photo.name}
+                        onError={(e) => {
+                          if (e.currentTarget.src !== window.location.origin + photo.viewUrl) {
+                            e.currentTarget.src = photo.viewUrl;
+                          }
+                        }}
+                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                      />
+
+                      {/* Selection Checkmark */}
+                      <div
+                        className={`absolute top-2 right-2 w-6 h-6 rounded-full flex items-center justify-center transition-all ${
+                          isSelected
+                            ? 'bg-[#3b82f6] text-white shadow-lg'
+                            : 'bg-black/50 text-transparent border border-white/20 group-hover:border-white/40'
+                        }`}
+                      >
+                        <Check className="w-3.5 h-3.5 stroke-[3]" />
+                      </div>
+
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent p-2 flex flex-col justify-end pointer-events-none">
+                        <p className="text-[10px] text-white font-medium truncate">
+                          {photo.name}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Single Photo Preview Modal within Album (Enlarged) ── */}
       <Dialog
         open={!!activePhoto}
         onOpenChange={(open) => !open && setActivePhoto(null)}
       >
-        <DialogContent className="max-w-3xl bg-[#141414]/95 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-4 rounded-2xl shadow-2xl">
+        <DialogContent className="max-w-6xl xl:max-w-7xl w-[95vw] h-[90vh] max-h-[92vh] bg-[#0c0c0c]/98 backdrop-blur-3xl border-white/10 text-[#e5e2e1] p-0 overflow-hidden rounded-2xl shadow-2xl flex flex-col">
           <DialogHeader className="sr-only">
             <DialogTitle>{activePhoto?.name || 'Photo'}</DialogTitle>
           </DialogHeader>
           {activePhoto && (
-            <div className="flex flex-col items-center gap-3">
-              <div className="w-full max-h-[70vh] flex items-center justify-center overflow-hidden rounded-xl bg-black/60 p-2">
+            <div className="flex flex-col lg:flex-row h-full w-full overflow-hidden">
+              {/* Spacious Large Photo Viewport */}
+              <div className="flex-1 bg-black/90 flex items-center justify-center p-4 md:p-8 relative h-[65vh] lg:h-full w-full overflow-hidden">
                 <img
                   src={activePhoto.url}
                   alt={activePhoto.name}
-                  className="max-h-[65vh] w-auto object-contain rounded-lg shadow-2xl"
+                  onError={(e) => {
+                    if (e.currentTarget.src !== window.location.origin + activePhoto.viewUrl) {
+                      e.currentTarget.src = activePhoto.viewUrl;
+                    }
+                  }}
+                  className="max-h-full max-w-full w-auto h-auto object-contain rounded-xl shadow-2xl select-none"
                 />
               </div>
-              <div className="w-full flex items-center justify-between px-2 pt-2 text-xs">
-                <div>
-                  <h4 className="font-semibold text-white text-sm">
-                    {activePhoto.name}
-                  </h4>
-                  <p className="text-[11px] text-[#8c909f]">{activePhoto.date}</p>
+
+              {/* Sidebar Info */}
+              <div className="w-full lg:w-80 p-6 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-white/10 bg-[#161616]/90 overflow-y-auto">
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <h4 className="font-[family-name:var(--font-manrope)] font-bold text-white text-lg">
+                      {activePhoto.name}
+                    </h4>
+                    <p className="text-xs text-[#8c909f] mt-1">{activePhoto.date}</p>
+                  </div>
                 </div>
-                <Link href={`/editor?photoId=${activePhoto.id}`}>
-                  <Button className="btn-vault text-xs rounded-xl px-3 py-1.5 flex items-center gap-1.5">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Open in AI Studio</span>
-                  </Button>
-                </Link>
+
+                <div className="pt-4 border-t border-white/10">
+                  <Link href={`/editor?photoId=${activePhoto.id}`} className="w-full">
+                    <Button className="w-full btn-vault text-xs rounded-xl py-5 font-semibold flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(59,130,246,0.25)]">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Edit in AI Studio</span>
+                    </Button>
+                  </Link>
+                </div>
               </div>
             </div>
           )}

@@ -28,6 +28,7 @@ export async function GET(request: NextRequest) {
     .from('images')
     .select('*', { count: 'exact' })
     .is('parent_image_id', null) // only originals, not AI-edited variants
+    .or('ai_transform_type.is.null,ai_transform_type.not.like.trash%')
     .order('created_at', { ascending: false })
     .range(from, to);
 
