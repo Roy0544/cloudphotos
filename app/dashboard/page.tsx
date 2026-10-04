@@ -42,6 +42,12 @@ interface StorageStats {
   formattedRemaining: string;
   usedPercentage: number;
   imageCount: number;
+  videoCount?: number;
+  totalCount?: number;
+  imageBytes?: number;
+  videoBytes?: number;
+  formattedImageBytes?: string;
+  formattedVideoBytes?: string;
   trashCount: number;
   totalOriginalBytes: number;
   totalBytes: number;
@@ -60,6 +66,12 @@ export default function DashboardPage() {
     formattedRemaining: '10 GB',
     usedPercentage: 0,
     imageCount: 0,
+    videoCount: 0,
+    totalCount: 0,
+    imageBytes: 0,
+    videoBytes: 0,
+    formattedImageBytes: '0 B',
+    formattedVideoBytes: '0 B',
     trashCount: 0,
     totalOriginalBytes: 0,
     totalBytes: 0,
@@ -212,10 +224,14 @@ export default function DashboardPage() {
               </div>
               <div className="mt-3">
                 <p className="text-2xl font-bold font-[family-name:var(--font-manrope)] text-[#e5e2e1]">
-                  {storage.imageCount}
+                  {storage.totalCount ?? (storage.imageCount + (storage.videoCount || 0))}
                 </p>
                 <p className="text-[11px] text-emerald-400 mt-0.5 flex items-center gap-1">
-                  <span>Archived in Vault</span>
+                  <span>
+                    {storage.videoCount && storage.videoCount > 0
+                      ? `${storage.imageCount} photos • ${storage.videoCount} video${storage.videoCount > 1 ? 's' : ''}`
+                      : `${storage.imageCount} photos preserved`}
+                  </span>
                   <ArrowRight className="w-3 h-3" />
                 </p>
               </div>
@@ -237,9 +253,14 @@ export default function DashboardPage() {
                     className="h-1 flex-1 bg-[#2a2a2a] [&>div]:bg-emerald-400"
                   />
                   <span className="text-[10px] text-[#8c909f] font-mono">
-                    of 10 GB
+                    {storage.formattedRemaining} free
                   </span>
                 </div>
+                {storage.videoCount && storage.videoCount > 0 && storage.formattedVideoBytes ? (
+                  <p className="text-[10px] text-[#8c909f] mt-1 font-mono truncate">
+                    {storage.formattedImageBytes} photos • {storage.formattedVideoBytes} videos
+                  </p>
+                ) : null}
               </div>
             </div>
 

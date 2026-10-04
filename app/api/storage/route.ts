@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import { getBunnyVideosStorageMap } from '@/lib/bunny';
 
 export const runtime = 'nodejs';
 
@@ -24,51 +25,75 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
-  // Fetch all images for this user
-  const { data: images, error: dbError } = await supabase
-    .from('images')
-    .select('id, compressed_size_bytes, original_size_bytes, ai_transform_type');
+  // Fetch images, videos, and Bunny CDN storage sizes concurrently
+  const [imagesRes, videosRes, bunnyStorageMap] = await Promise.all([
+    supabase
+      .from('images')
+      .select('id, compressed_size_bytes, original_size_bytes, ai_transform_type'),
+    supabase
+      .from('videos')
+      .select('id, stream_video_id, status, error_message')
+      .eq('user_id', user.id),
+    getBunnyVideosStorageMap(),
+  ]);
 
-  if (dbError) {
-    console.error('[storage] DB fetch error:', dbError);
+  if (imagesRes.error) {
+    console.error('[storage] DB fetch error:', imagesRes.error);
     return NextResponse.json({ error: 'Failed to fetch storage stats.' }, { status: 500 });
   }
 
-  // Fetch all videos for this user
-  const { data: videos } = await supabase
-    .from('videos')
-    .select('id, status')
-    .eq('user_id', user.id);
+  const images = imagesRes.data || [];
+  const videos = videosRes.data || [];
 
   let totalActiveBytes = 0;
   let totalOriginalBytes = 0;
+  let imageBytes = 0;
+  let videoBytes = 0;
   let activeImageCount = 0;
   let activeVideoCount = 0;
   let trashCount = 0;
 
-  (images || []).forEach((img) => {
-    const isTrashed = typeof img.ai_transform_type === 'string' && img.ai_transform_type.startsWith('trash');
+  // 1. Calculate photos storage (Cloudflare R2)
+  images.forEach((img) => {
+    const isTrashed =
+      typeof img.ai_transform_type === 'string' &&
+      img.ai_transform_type.startsWith('trash');
     if (isTrashed) {
       trashCount++;
     } else {
       activeImageCount++;
-      totalActiveBytes += img.compressed_size_bytes || 0;
-      totalOriginalBytes += img.original_size_bytes || img.compressed_size_bytes || 0;
+      const compBytes = img.compressed_size_bytes || 0;
+      const origBytes = img.original_size_bytes || compBytes;
+      imageBytes += compBytes;
+      totalActiveBytes += compBytes;
+      totalOriginalBytes += origBytes;
     }
   });
 
-  (videos || []).forEach((v) => {
-    if (v.status === 'trash') {
+  // 2. Calculate videos storage (Bunny Stream multi-bitrate HLS + originals)
+  videos.forEach((v) => {
+    const isTrashed =
+      typeof v.error_message === 'string' &&
+      v.error_message.startsWith('trash');
+
+    if (isTrashed) {
       trashCount++;
     } else {
       activeVideoCount++;
+      const vidSizeBytes = bunnyStorageMap.get(v.stream_video_id) || 0;
+      videoBytes += vidSizeBytes;
+      totalActiveBytes += vidSizeBytes;
+      totalOriginalBytes += vidSizeBytes;
     }
   });
 
   const remainingBytes = Math.max(0, VAULT_LIMIT_BYTES - totalActiveBytes);
   const usedPercentage = Math.min(100, (totalActiveBytes / VAULT_LIMIT_BYTES) * 100);
   const savedBytes = Math.max(0, totalOriginalBytes - totalActiveBytes);
-  const savedPercent = totalOriginalBytes > 0 ? Math.round((savedBytes / totalOriginalBytes) * 100) : 0;
+  const savedPercent =
+    totalOriginalBytes > 0
+      ? Math.round((savedBytes / totalOriginalBytes) * 100)
+      : 0;
 
   return NextResponse.json({
     storage: {
@@ -79,8 +104,13 @@ export async function GET(request: NextRequest) {
       formattedUsed: formatBytes(totalActiveBytes),
       formattedLimit: '10 GB',
       formattedRemaining: formatBytes(remainingBytes),
+      imageBytes,
+      videoBytes,
+      formattedImageBytes: formatBytes(imageBytes),
+      formattedVideoBytes: formatBytes(videoBytes),
       imageCount: activeImageCount,
       videoCount: activeVideoCount,
+      totalCount: activeImageCount + activeVideoCount,
       trashCount,
       totalOriginalBytes,
       savedBytes,
@@ -88,3 +118,4 @@ export async function GET(request: NextRequest) {
     },
   });
 }
+

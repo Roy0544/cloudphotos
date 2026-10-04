@@ -53,12 +53,18 @@ export function VaultSidebar({
     formattedRemaining: string;
     usedPercentage: number;
     trashCount: number;
+    videoCount?: number;
+    imageCount?: number;
+    formattedImageBytes?: string;
+    formattedVideoBytes?: string;
   }>({
     formattedUsed: '0 MB',
     formattedLimit: '10 GB',
     formattedRemaining: '10 GB',
     usedPercentage: 0,
     trashCount: 0,
+    videoCount: 0,
+    imageCount: 0,
   });
 
   const fetchStorage = useCallback(async () => {
@@ -276,6 +282,11 @@ export function VaultSidebar({
             <p className="text-[10px] text-[#8c909f]">
               {storageData.usedPercentage}% used • {storageData.formattedRemaining} free
             </p>
+            {storageData.videoCount && storageData.videoCount > 0 && storageData.formattedVideoBytes ? (
+              <p className="text-[9px] text-[#8c909f]/80 font-mono truncate">
+                {storageData.formattedImageBytes} photos • {storageData.formattedVideoBytes} videos
+              </p>
+            ) : null}
           </div>
 
           {/* Action 1: Upload Media Button */}

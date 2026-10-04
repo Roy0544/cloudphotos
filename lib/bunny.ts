@@ -142,3 +142,42 @@ export function getBunnyVideoUrls(videoId: string): BunnyUrls {
     embedUrl: `https://iframe.mediadelivery.net/embed/${LIBRARY_ID}/${videoId}?autoplay=true&loop=false&muted=false&preload=true&responsive=true`,
   };
 }
+
+/**
+ * Fetch map of stream_video_id -> storageSize (in bytes) for all videos in the library
+ */
+export async function getBunnyVideosStorageMap(): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (!API_KEY) return map;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 4000);
+
+    const response = await fetch(`${BASE_API_URL}/videos?page=1&itemsPerPage=1000`, {
+      method: 'GET',
+      headers: {
+        AccessKey: API_KEY,
+        Accept: 'application/json',
+      },
+      signal: controller.signal,
+      next: { revalidate: 30 },
+    });
+
+    clearTimeout(timeout);
+
+    if (response.ok) {
+      const data = await response.json();
+      for (const item of data.items || []) {
+        if (item.guid) {
+          map.set(item.guid, item.storageSize || 0);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Bunny Stream] Failed to fetch video storage sizes:', err);
+  }
+
+  return map;
+}
+
