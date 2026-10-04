@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -20,6 +20,11 @@ import {
   FolderPlus,
   Sparkles,
   HardDrive,
+  Wifi,
+  WifiOff,
+  Play,
+  PlayCircle,
+  ShieldCheck,
 } from 'lucide-react';
 import {
   Dialog,
@@ -42,6 +47,7 @@ type UploadStatus =
   | 'optimizing'
   | 'storing'
   | 'complete'
+  | 'paused'
   | 'error'
   | 'cancelled';
 
@@ -70,6 +76,7 @@ const PROGRESS_MAP: Record<UploadStatus, number> = {
   optimizing: 65,
   storing: 88,
   complete: 100,
+  paused: 25,
   error: 0,
   cancelled: 0,
 };
@@ -80,6 +87,7 @@ const STATUS_LABELS: Record<UploadStatus, string> = {
   optimizing: 'Optimising WebP...',
   storing: 'Saving to R2...',
   complete: 'Vaulted',
+  paused: 'Paused (Waiting)',
   error: 'Failed',
   cancelled: 'Cancelled',
 };
@@ -181,6 +189,8 @@ export function UploadMediaDialog({
   const router = useRouter();
   const [dragActive, setDragActive] = useState(false);
   const [files, setFiles] = useState<UploadingFile[]>([]);
+  const [isOffline, setIsOffline] = useState(false);
+  const [isWakeLockActive, setIsWakeLockActive] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isCancelledRef = useRef(false);
   const activeWorkersCountRef = useRef(0);
@@ -195,7 +205,7 @@ export function UploadMediaDialog({
   );
 
   /**
-   * Upload single photo to /api/upload with progress stages
+   * Upload single photo to /api/upload with exponential backoff & offline pause
    */
   const uploadSinglePhoto = useCallback(
     async (entry: UploadingFile): Promise<string | null> => {
@@ -206,68 +216,124 @@ export function UploadMediaDialog({
 
       const { id, file } = entry;
 
-      try {
-        updateFile(id, {
-          status: 'uploading',
-          progress: PROGRESS_MAP.uploading,
-        });
-
-        const formData = new FormData();
-        formData.append('file', file);
-
-        updateFile(id, {
-          status: 'optimizing',
-          progress: PROGRESS_MAP.optimizing,
-        });
-
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
+      // Retry up to 3 times on transient network hiccups
+      for (let attempt = 1; attempt <= 3; attempt++) {
         if (isCancelledRef.current) {
           updateFile(id, { status: 'cancelled', progress: 0 });
           return null;
         }
 
-        updateFile(id, {
-          status: 'storing',
-          progress: PROGRESS_MAP.storing,
-        });
-
-        if (!response.ok) {
-          const errorBody = await response
-            .json()
-            .catch(() => ({ error: 'Upload failed.' }));
-          throw new Error(errorBody.error || `HTTP ${response.status}`);
+        // If device is offline, wait for network restoration
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          setIsOffline(true);
+          updateFile(id, {
+            status: 'paused',
+            errorMessage: 'Network interrupted. Waiting to reconnect...',
+          });
+          await new Promise<void>((resolve) => {
+            const onOnline = () => {
+              window.removeEventListener('online', onOnline);
+              setIsOffline(false);
+              resolve();
+            };
+            window.addEventListener('online', onOnline);
+          });
         }
 
-        const result = await response.json();
+        try {
+          updateFile(id, {
+            status: 'uploading',
+            progress: PROGRESS_MAP.uploading,
+            errorMessage: undefined,
+          });
 
-        updateFile(id, {
-          status: 'complete',
-          progress: 100,
-          compressedSizeBytes: result.compressedSizeBytes,
-          compressedSize: formatBytes(result.compressedSizeBytes),
-          compressionRatio: result.compressionRatio,
-          uploadedPhotoId: result.id,
-        });
+          const formData = new FormData();
+          formData.append('file', file);
 
-        return result.id;
-      } catch (err: any) {
-        updateFile(id, {
-          status: 'error',
-          progress: 0,
-          errorMessage: err.message || 'Upload failed.',
-        });
-        return null;
+          updateFile(id, {
+            status: 'optimizing',
+            progress: PROGRESS_MAP.optimizing,
+          });
+
+          const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (isCancelledRef.current) {
+            updateFile(id, { status: 'cancelled', progress: 0 });
+            return null;
+          }
+
+          updateFile(id, {
+            status: 'storing',
+            progress: PROGRESS_MAP.storing,
+          });
+
+          if (!response.ok) {
+            const errorBody = await response
+              .json()
+              .catch(() => ({ error: 'Upload failed.' }));
+
+            if (response.status >= 500 && attempt < 3) {
+              await new Promise((r) => setTimeout(r, attempt * 1500));
+              continue;
+            }
+            throw new Error(errorBody.error || `HTTP ${response.status}`);
+          }
+
+          const result = await response.json();
+
+          updateFile(id, {
+            status: 'complete',
+            progress: 100,
+            compressedSizeBytes: result.compressedSizeBytes,
+            compressedSize: formatBytes(result.compressedSizeBytes),
+            compressionRatio: result.compressionRatio,
+            uploadedPhotoId: result.id,
+            errorMessage: undefined,
+          });
+
+          setIsOffline(false);
+          return result.id;
+        } catch (err: any) {
+          const isNetworkErr =
+            (typeof navigator !== 'undefined' && !navigator.onLine) ||
+            err.name === 'TypeError' ||
+            err.message?.includes('fetch') ||
+            err.message?.includes('network');
+
+          if (isNetworkErr && attempt < 3) {
+            updateFile(id, {
+              status: 'paused',
+              errorMessage: `Connection lost. Retrying (attempt ${attempt}/3)...`,
+            });
+            await new Promise((r) => setTimeout(r, attempt * 2000));
+          } else if (isNetworkErr) {
+            setIsOffline(true);
+            updateFile(id, {
+              status: 'paused',
+              progress: PROGRESS_MAP.paused,
+              errorMessage: 'Connection lost. Tap Resume when online.',
+            });
+            return null;
+          } else {
+            updateFile(id, {
+              status: 'error',
+              progress: 0,
+              errorMessage: err.message || 'Upload failed.',
+            });
+            return null;
+          }
+        }
       }
+      return null;
     },
     [updateFile]
   );
 
   /**
-   * Concurrency worker pool runner: ensures max 3 parallel uploads
+   * Concurrency worker pool runner: ensures max 3 parallel uploads with auto-pause
    */
   const runWorkerPool = useCallback(
     async (entriesToProcess: UploadingFile[]) => {
@@ -277,7 +343,22 @@ export function UploadMediaDialog({
 
       const worker = async () => {
         while (queueIndex < queue.length && !isCancelledRef.current) {
+          // If offline, pause until connection is restored
+          if (typeof navigator !== 'undefined' && !navigator.onLine) {
+            setIsOffline(true);
+            await new Promise<void>((resolve) => {
+              const onOnline = () => {
+                window.removeEventListener('online', onOnline);
+                setIsOffline(false);
+                resolve();
+              };
+              window.addEventListener('online', onOnline);
+            });
+          }
+
           const current = queue[queueIndex++];
+          if (!current) break;
+
           activeWorkersCountRef.current++;
           await uploadSinglePhoto(current);
           activeWorkersCountRef.current--;
@@ -346,12 +427,18 @@ export function UploadMediaDialog({
     }
   };
 
-  // Retry failed items in the queue
-  const retryFailed = useCallback(async () => {
-    const failedItems = files.filter((f) => f.status === 'error');
-    if (failedItems.length === 0) return;
+  /**
+   * Resume all unfinished / paused / failed files from where it left off
+   */
+  const resumeUnfinished = useCallback(async () => {
+    const toResume = files.filter(
+      (f) => f.status === 'error' || f.status === 'paused' || f.status === 'queued'
+    );
+    if (toResume.length === 0) return;
 
-    failedItems.forEach((f) => {
+    setIsOffline(false);
+
+    toResume.forEach((f) => {
       updateFile(f.id, {
         status: 'queued',
         progress: PROGRESS_MAP.queued,
@@ -359,7 +446,7 @@ export function UploadMediaDialog({
       });
     });
 
-    const resetItems = failedItems.map((f) => ({
+    const resetItems = toResume.map((f) => ({
       ...f,
       status: 'queued' as UploadStatus,
       progress: PROGRESS_MAP.queued,
@@ -374,7 +461,9 @@ export function UploadMediaDialog({
     isCancelledRef.current = true;
     setFiles((prev) =>
       prev.map((f) =>
-        f.status === 'queued' ? { ...f, status: 'cancelled', progress: 0 } : f
+        f.status === 'queued' || f.status === 'paused'
+          ? { ...f, status: 'cancelled', progress: 0 }
+          : f
       )
     );
   };
@@ -447,6 +536,103 @@ export function UploadMediaDialog({
       .map((f) => f.uploadedPhotoId)
       .filter((id): id is string => Boolean(id));
   }, [completedFiles]);
+
+  const pausedCount = useMemo(
+    () => files.filter((f) => f.status === 'paused').length,
+    [files]
+  );
+
+  const unfinishedCount = useMemo(
+    () => files.filter((f) => f.status !== 'complete' && f.status !== 'cancelled').length,
+    [files]
+  );
+
+  // ── 1. Screen Wake Lock (keeps mobile screen awake during upload) ──
+  useEffect(() => {
+    let wakeLockSentinel: any = null;
+
+    async function acquireLock() {
+      if (typeof navigator !== 'undefined' && 'wakeLock' in navigator && activeCount > 0) {
+        try {
+          wakeLockSentinel = await (navigator as any).wakeLock.request('screen');
+          setIsWakeLockActive(true);
+          wakeLockSentinel.addEventListener?.('release', () => {
+            setIsWakeLockActive(false);
+          });
+        } catch {
+          setIsWakeLockActive(false);
+        }
+      }
+    }
+
+    if (activeCount > 0) {
+      acquireLock();
+    } else if (wakeLockSentinel) {
+      wakeLockSentinel.release().catch(() => {});
+      setIsWakeLockActive(false);
+    }
+
+    return () => {
+      if (wakeLockSentinel) {
+        wakeLockSentinel.release().catch(() => {});
+      }
+    };
+  }, [activeCount]);
+
+  // ── 2. Visibility change & Online event handlers (auto-resume) ──
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        if (typeof navigator !== 'undefined' && navigator.onLine) {
+          setIsOffline(false);
+          const needsResume = files.some(
+            (f) => f.status === 'paused' || f.status === 'error'
+          );
+          if (needsResume && activeWorkersCountRef.current === 0) {
+            resumeUnfinished();
+          }
+        }
+      }
+    };
+
+    const handleOnline = () => {
+      setIsOffline(false);
+      const needsResume = files.some(
+        (f) => f.status === 'paused' || f.status === 'error'
+      );
+      if (needsResume && activeWorkersCountRef.current === 0) {
+        resumeUnfinished();
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOffline(true);
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, [files, resumeUnfinished]);
+
+  // ── 3. Warn before closing or navigating away during active uploads ──
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (activeCount > 0) {
+        e.preventDefault();
+        e.returnValue = 'Upload in progress. Leaving this page will stop remaining uploads.';
+        return e.returnValue;
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [activeCount]);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -538,11 +724,40 @@ export function UploadMediaDialog({
           </div>
         ) : (
           <div className="flex flex-col gap-4">
+            {/* ── Connection Alert Banner (Auto-Resume) ── */}
+            {(isOffline || pausedCount > 0 || (failedCount > 0 && activeCount === 0)) && (
+              <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/30 flex items-center justify-between text-xs text-amber-200">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0">
+                    <WifiOff className="w-4 h-4 text-amber-400 animate-pulse" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-semibold text-white truncate">
+                      {isOffline ? 'Network Disconnected' : 'Batch Upload Paused / Interrupted'}
+                    </p>
+                    <p className="text-[11px] text-amber-300/80 leading-snug">
+                      {completedCount} vaulted • {unfinishedCount} remaining. Reconnecting automatically when online...
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={resumeUnfinished}
+                  className="btn-vault text-xs px-3.5 py-1.5 rounded-xl flex items-center gap-1.5 shrink-0 ml-2 shadow-[0_0_15px_rgba(59,130,246,0.3)]"
+                >
+                  <Play className="w-3 h-3 fill-current" />
+                  <span>Resume ({unfinishedCount})</span>
+                </Button>
+              </div>
+            )}
+
             {/* ── Master Batch Dashboard ── */}
             <div className="glass-card rounded-2xl p-4 border border-white/10 flex flex-col gap-3 bg-white/[0.02]">
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-sm text-white">
                       Batch Progress:
                     </span>
@@ -550,8 +765,13 @@ export function UploadMediaDialog({
                       {completedCount} / {files.length} vaulted
                     </span>
                     {activeCount > 0 && (
-                      <span className="text-[10px] bg-[#3b82f6]/20 text-[#adc6ff] border border-[#3b82f6]/30 px-2 py-0.5 rounded-full font-mono">
-                        {activeCount} in progress
+                      <span className="text-[10px] bg-[#3b82f6]/20 text-[#adc6ff] border border-[#3b82f6]/30 px-2 py-0.5 rounded-full font-mono flex items-center gap-1">
+                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> {activeCount} uploading
+                      </span>
+                    )}
+                    {isWakeLockActive && (
+                      <span className="text-[10px] text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-mono">
+                        <ShieldCheck className="w-2.5 h-2.5" /> Screen Awake
                       </span>
                     )}
                   </div>
@@ -579,14 +799,14 @@ export function UploadMediaDialog({
               {/* Action shortcuts during or after batch */}
               <div className="flex items-center justify-between pt-1 text-xs">
                 <div className="flex items-center gap-2">
-                  {failedCount > 0 && (
+                  {(failedCount > 0 || pausedCount > 0) && activeCount === 0 && (
                     <button
                       type="button"
-                      onClick={retryFailed}
-                      className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold pressable"
+                      onClick={resumeUnfinished}
+                      className="text-amber-400 hover:text-amber-300 flex items-center gap-1 font-semibold pressable cursor-pointer"
                     >
                       <RotateCcw className="w-3 h-3" />
-                      <span>Retry {failedCount} Failed</span>
+                      <span>Resume {unfinishedCount} Remaining</span>
                     </button>
                   )}
                   {activeCount > 0 && (
