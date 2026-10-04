@@ -160,7 +160,7 @@ export default function DashboardPage() {
         {/* Mobile Header */}
         <header className="md:hidden sticky top-0 z-40 glass-panel border-b border-white/10 px-4 py-3.5 flex justify-between items-center backdrop-blur-xl">
           <Link href="/dashboard" className="font-[family-name:var(--font-manrope)] text-lg font-bold text-[#adc6ff]">
-            Family Cloud
+            Photos
           </Link>
           <div className="flex items-center gap-2">
             <Button
@@ -354,7 +354,7 @@ export default function DashboardPage() {
                   <Images className="w-8 h-8 text-[#adc6ff]" />
                 </div>
                 <h3 className="font-[family-name:var(--font-manrope)] text-xl font-bold text-white">
-                  Start Your Family Vault
+                  Start Your Photo Vault
                 </h3>
                 <p className="text-xs text-[#8c909f] mt-1.5 max-w-md">
                   Upload your first batch of photos. They will be compressed, archived in Cloudflare R2, and displayed on your timeline.

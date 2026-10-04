@@ -160,10 +160,10 @@ export function VaultSidebar({
           </div>
           <div>
             <h1 className="font-[family-name:var(--font-manrope)] text-base font-bold text-white tracking-tight flex items-center gap-1.5">
-              <span>Family Cloud</span>
+              <span>Photos</span>
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
             </h1>
-            <p className="text-[11px] text-[#8c909f] font-medium">Vault Archive</p>
+            <p className="text-[11px] text-[#8c909f] font-medium">Cloud Vault</p>
           </div>
         </Link>
 

@@ -176,7 +176,7 @@ function LoginForm() {
         {/* Heading */}
         <div className="flex flex-col gap-1.5">
           <h1 className="font-[family-name:var(--font-manrope)] text-[28px] sm:text-[32px] font-bold leading-tight tracking-tight text-[#e5e2e1]">
-            Family Cloud
+            Photos
           </h1>
           <p className="font-[family-name:var(--font-inter)] text-sm text-[#8c909f]">
             Private, encrypted cloud vault for family media.
@@ -353,7 +353,7 @@ function LoginForm() {
               </span>
               <Input
                 type="email"
-                placeholder="Family member email address"
+                placeholder="Enter your email address"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required

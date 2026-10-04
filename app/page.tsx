@@ -1,5 +1,11 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Shield, Play, Plus, Sparkles, BookImage, Heart } from "lucide-react";
+
+export const metadata: Metadata = {
+  title: "Photos — Private Cloud Photo & Video Vault",
+  description: "Private archival cloud for high-resolution family photos and streaming videos.",
+};
 
 const screens = [
   {
@@ -62,10 +68,10 @@ export default function Home() {
           className="text-5xl font-bold tracking-tight text-[#e5e2e1] mb-3"
           style={{ fontFamily: "var(--font-manrope)" }}
         >
-          Family Photo Vault 2.0
+          Photos
         </h1>
         <p className="text-base text-[#c2c6d6] max-w-md mx-auto" style={{ fontFamily: "var(--font-inter)" }}>
-          Ethereal Archive design system — dark glassmorphic vault aesthetic built with Next.js &amp; shadcn/ui
+          Private, encrypted cloud vault for your family memories, photos, and streaming videos
         </p>
       </div>
 

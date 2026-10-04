@@ -15,8 +15,11 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "Family Cloud - Photo Vault",
-  description: "Secure, private family photo vault",
+  title: {
+    default: "Photos",
+    template: "%s | Photos",
+  },
+  description: "Secure, private cloud photo and streaming video vault",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
