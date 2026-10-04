@@ -432,7 +432,7 @@ export default function AlbumsPage() {
         open={!!activeAlbum}
         onOpenChange={(open) => !open && setActiveAlbumId(null)}
       >
-        <DialogContent className="max-w-5xl bg-[#121212]/95 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-6 rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-6xl xl:max-w-7xl w-[95vw] h-[90vh] max-h-[92vh] bg-[#101114]/98 backdrop-blur-3xl border-white/10 text-[#e5e2e1] p-5 md:p-7 rounded-2xl md:rounded-3xl shadow-2xl flex flex-col overflow-hidden">
           <DialogHeader className="sr-only">
             <DialogTitle>{activeAlbum?.title || 'Album Details'}</DialogTitle>
           </DialogHeader>
@@ -440,9 +440,9 @@ export default function AlbumsPage() {
           {activeAlbum && (
             <>
               {/* Header Hero Banner with Album Cover */}
-              <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-[#1a1c24] to-[#12141a] p-4 flex flex-col sm:flex-row items-center gap-4 shrink-0 shadow-lg">
+              <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-[#1a1c24]/90 via-[#13151c]/90 to-[#0e1017]/90 p-4 md:p-5 flex flex-col md:flex-row items-center gap-5 shrink-0 shadow-lg backdrop-blur-xl">
                 {/* Cover Thumbnail */}
-                <div className="relative w-full sm:w-36 h-28 shrink-0 rounded-xl overflow-hidden bg-black/60 border border-white/10 group shadow-inner">
+                <div className="relative w-full md:w-56 h-36 md:h-36 shrink-0 rounded-xl overflow-hidden bg-black/60 border border-white/10 group shadow-inner">
                   {(() => {
                     const coverUrl = getAlbumCoverUrl(activeAlbum);
                     return coverUrl ? (
@@ -462,47 +462,47 @@ export default function AlbumsPage() {
                             }
                           }
                         }}
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center text-[#8c909f]">
-                        <Images className="w-8 h-8 opacity-40" />
+                        <Images className="w-10 h-10 opacity-40" />
                       </div>
                     );
                   })()}
-                  <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[9px] font-semibold text-white/95 flex items-center gap-1 border border-white/15">
-                    <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
-                    <span>Cover</span>
+                  <div className="absolute top-2.5 left-2.5 bg-black/75 backdrop-blur-md px-2.5 py-0.5 rounded-full text-[10px] font-semibold text-white/95 flex items-center gap-1 border border-white/15">
+                    <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                    <span>Album Cover</span>
                   </div>
                 </div>
 
                 {/* Album Details */}
-                <div className="flex-1 min-w-0 text-center sm:text-left">
-                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
-                    <h2 className="font-[family-name:var(--font-manrope)] text-xl font-bold text-white tracking-tight truncate">
+                <div className="flex-1 min-w-0 text-center md:text-left">
+                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-2.5">
+                    <h2 className="font-[family-name:var(--font-manrope)] text-2xl font-bold text-white tracking-tight truncate">
                       {activeAlbum.title}
                     </h2>
-                    <span className="text-[11px] font-semibold bg-[#3b82f6]/20 text-[#adc6ff] border border-[#3b82f6]/30 px-2.5 py-0.5 rounded-full font-mono">
+                    <span className="text-xs font-semibold bg-[#3b82f6]/20 text-[#adc6ff] border border-[#3b82f6]/30 px-3 py-0.5 rounded-full font-mono">
                       {activeAlbum.photoIds.length}{' '}
                       {activeAlbum.photoIds.length === 1 ? 'photo' : 'photos'}
                     </span>
-                    <span className="text-[11px] font-semibold bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-full text-white/80 flex items-center gap-1">
+                    <span className="text-xs font-semibold bg-white/5 border border-white/10 px-3 py-0.5 rounded-full text-white/80 flex items-center gap-1.5">
                       {activeAlbum.privacy === 'family' ? (
                         <>
-                          <Users className="w-3 h-3 text-[#adc6ff]" />
-                          <span>Family</span>
+                          <Users className="w-3.5 h-3.5 text-[#adc6ff]" />
+                          <span>Family Circle</span>
                         </>
                       ) : (
                         <>
-                          <Lock className="w-3 h-3 text-amber-300" />
-                          <span>Private</span>
+                          <Lock className="w-3.5 h-3.5 text-amber-300" />
+                          <span>Private Vault</span>
                         </>
                       )}
                     </span>
                   </div>
 
                   {activeAlbum.description ? (
-                    <p className="text-xs text-[#8c909f] mt-1 line-clamp-2">
+                    <p className="text-sm text-[#8c909f] mt-1.5 line-clamp-2">
                       {activeAlbum.description}
                     </p>
                   ) : (
@@ -511,9 +511,9 @@ export default function AlbumsPage() {
                     </p>
                   )}
 
-                  <div className="flex items-center justify-center sm:justify-start gap-3 mt-2.5 text-[11px] text-[#8c909f]">
-                    <span className="flex items-center gap-1">
-                      <Calendar className="w-3 h-3" />
+                  <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 mt-3 text-xs text-[#8c909f]">
+                    <span className="flex items-center gap-1.5">
+                      <Calendar className="w-3.5 h-3.5" />
                       <span>
                         Created{' '}
                         {new Date(activeAlbum.createdAt).toLocaleDateString(
@@ -527,8 +527,8 @@ export default function AlbumsPage() {
                       </span>
                     </span>
                     <span className="text-white/20 hidden sm:inline">•</span>
-                    <span className="text-[#8c909f] text-[10px] hidden sm:inline">
-                      Hover any photo below to set as cover
+                    <span className="text-[#8c909f] text-[11px] hidden sm:inline">
+                      Click any photo to inspect • Hover photo to set as cover or remove
                     </span>
                   </div>
                 </div>
@@ -537,29 +537,29 @@ export default function AlbumsPage() {
                 <div className="shrink-0 flex items-center gap-2">
                   <Button
                     onClick={handleOpenAddPhotos}
-                    className="btn-vault text-xs rounded-xl px-4 py-2 font-semibold flex items-center gap-1.5 shadow-[0_0_15px_rgba(59,130,246,0.3)] pressable"
+                    className="btn-vault text-xs rounded-xl px-4 py-2.5 font-semibold flex items-center gap-2 shadow-[0_0_20px_rgba(59,130,246,0.35)] pressable"
                   >
-                    <Plus className="w-3.5 h-3.5" />
+                    <Plus className="w-4 h-4" />
                     <span>Add Photos</span>
                   </Button>
                 </div>
               </div>
 
               {/* Grid of photos in active album */}
-              <div className="flex-1 overflow-y-auto py-3">
+              <div className="flex-1 overflow-y-auto py-4 min-h-0 pr-1">
                 {activeAlbum.photoIds.length === 0 ? (
-                  <div className="py-16 text-center text-xs text-[#8c909f] flex flex-col items-center justify-center gap-3">
+                  <div className="py-24 text-center text-sm text-[#8c909f] flex flex-col items-center justify-center gap-3">
                     <p>No photos in this album yet.</p>
                     <Button
                       onClick={handleOpenAddPhotos}
-                      className="btn-vault text-xs rounded-xl px-4 py-2 flex items-center gap-1.5"
+                      className="btn-vault text-xs rounded-xl px-5 py-2.5 flex items-center gap-2"
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-4 h-4" />
                       <span>Add Photos Now</span>
                     </Button>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3.5">
                     {activeAlbum.photoIds.map((photoId) => {
                       const photo = allPhotosMap.get(photoId);
                       if (!photo) return null;
@@ -573,7 +573,7 @@ export default function AlbumsPage() {
                           onClick={() => setActivePhoto(photo)}
                           className={`aspect-square relative rounded-xl overflow-hidden cursor-pointer group border select-none transition-all ${
                             isCover
-                              ? 'border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.2)]'
+                              ? 'border-amber-400/60 shadow-[0_0_15px_rgba(251,191,36,0.25)]'
                               : 'border-white/10 hover:border-white/30'
                           }`}
                         >
@@ -594,7 +594,7 @@ export default function AlbumsPage() {
 
                           {/* Cover Badge */}
                           {isCover && (
-                            <div className="absolute top-2 left-2 z-10 bg-black/80 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-semibold text-amber-300 flex items-center gap-1 border border-amber-400/40">
+                            <div className="absolute top-2 left-2 z-10 bg-black/80 backdrop-blur-md px-2 py-0.5 rounded text-[9px] font-semibold text-amber-300 flex items-center gap-1 border border-amber-400/40">
                               <Star className="w-2.5 h-2.5 fill-amber-300" />
                               <span>Cover</span>
                             </div>
@@ -652,10 +652,10 @@ export default function AlbumsPage() {
 
       {/* ── Add Photos to Album Dialog ── */}
       <Dialog open={isAddPhotosOpen} onOpenChange={setIsAddPhotosOpen}>
-        <DialogContent className="max-w-3xl bg-[#141414]/95 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-6 rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
+        <DialogContent className="max-w-4xl lg:max-w-5xl w-[92vw] h-[85vh] max-h-[88vh] bg-[#141414]/98 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-6 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
           <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-white/10 space-y-0">
             <div>
-              <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
+              <DialogTitle className="text-lg font-bold text-white flex items-center gap-2">
                 <Plus className="w-4 h-4 text-[#3b82f6]" />
                 <span>Add Photos to &ldquo;{activeAlbum?.title}&rdquo;</span>
               </DialogTitle>
@@ -674,13 +674,13 @@ export default function AlbumsPage() {
             </Button>
           </DialogHeader>
 
-          <div className="flex-1 overflow-y-auto py-4">
+          <div className="flex-1 overflow-y-auto py-4 min-h-0">
             {availablePhotosToAdd.length === 0 ? (
-              <div className="py-16 text-center text-xs text-[#8c909f]">
+              <div className="py-20 text-center text-xs text-[#8c909f]">
                 All photos in your vault are already in this album!
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3.5">
                 {availablePhotosToAdd.map((photo) => {
                   const isSelected = selectedPhotoIdsToAdd.has(photo.id);
 
