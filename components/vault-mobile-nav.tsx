@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { LayoutDashboard, Clock, Heart, Sparkles, Upload, FolderPlus } from 'lucide-react';
 import { UploadMediaDialog } from '@/components/upload-media-dialog';
 
 interface VaultMobileNavProps {
-  currentRoute: 'dashboard' | 'timeline' | 'favorites' | 'editor';
+  currentRoute: 'dashboard' | 'timeline' | 'favorites' | 'editor' | 'albums' | 'create-album';
   activeFilter?: 'all' | 'favs' | string;
   onFilterChange?: (filter: string) => void;
 }
@@ -16,11 +17,13 @@ export function VaultMobileNav({
   activeFilter,
   onFilterChange,
 }: VaultMobileNavProps) {
+  const router = useRouter();
   const [isUploadOpen, setIsUploadOpen] = useState(false);
 
   const isDashboard = currentRoute === 'dashboard';
   const isTimeline = currentRoute === 'timeline' && activeFilter !== 'favs';
   const isFavorites = currentRoute === 'favorites' || activeFilter === 'favs';
+  const isAlbums = currentRoute === 'albums';
   const isEditor = currentRoute === 'editor';
 
   return (
@@ -72,18 +75,24 @@ export function VaultMobileNav({
           <span className="text-[10px] font-semibold">Favorites</span>
         </Link>
 
-        {/* Create Album */}
+        {/* Albums */}
         <Link
-          href="/create-album"
-          className="flex flex-col items-center gap-1 text-[#8c909f] p-2 w-14 pressable hover:text-white"
+          href="/albums"
+          className={`flex flex-col items-center gap-1 rounded-xl p-2 w-14 pressable ${
+            isAlbums ? 'bg-[#3b82f6] text-white shadow-[0_0_12px_rgba(59,130,246,0.4)]' : 'text-[#8c909f]'
+          }`}
         >
           <FolderPlus className="w-4 h-4" />
-          <span className="text-[10px]">Album</span>
+          <span className="text-[10px] font-semibold">Albums</span>
         </Link>
       </nav>
 
       {/* Direct Upload Dialog */}
-      <UploadMediaDialog open={isUploadOpen} onOpenChange={setIsUploadOpen} />
+      <UploadMediaDialog
+        open={isUploadOpen}
+        onOpenChange={setIsUploadOpen}
+        onUploadComplete={() => router.refresh()}
+      />
     </>
   );
 }

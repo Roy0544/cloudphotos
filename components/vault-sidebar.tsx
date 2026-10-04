@@ -22,24 +22,49 @@ import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { UploadMediaDialog } from '@/components/upload-media-dialog';
 import { createClient } from '@/lib/supabase/client';
+import { getStoredFavorites } from '@/lib/favorites';
+import { getStoredAlbums } from '@/lib/albums';
 
 interface VaultSidebarProps {
-  currentRoute: 'dashboard' | 'timeline' | 'favorites' | 'editor';
+  currentRoute: 'dashboard' | 'timeline' | 'favorites' | 'editor' | 'albums' | 'create-album';
   activeFilter?: 'all' | 'favs' | string;
   onFilterChange?: (filter: string) => void;
   favoritesCount?: number;
+  albumsCount?: number;
 }
 
 export function VaultSidebar({
   currentRoute,
   activeFilter,
   onFilterChange,
-  favoritesCount = 3,
+  favoritesCount,
+  albumsCount,
 }: VaultSidebarProps) {
   const router = useRouter();
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [liveFavCount, setLiveFavCount] = useState(0);
+  const [liveAlbumsCount, setLiveAlbumsCount] = useState(0);
+
+  useEffect(() => {
+    const updateFavs = () => {
+      setLiveFavCount(getStoredFavorites().size);
+    };
+    const updateAlbums = () => {
+      setLiveAlbumsCount(getStoredAlbums().length);
+    };
+
+    updateFavs();
+    updateAlbums();
+
+    window.addEventListener('vault-favorites-updated', updateFavs);
+    window.addEventListener('vault-albums-updated', updateAlbums);
+    return () => {
+      window.removeEventListener('vault-favorites-updated', updateFavs);
+      window.removeEventListener('vault-albums-updated', updateAlbums);
+    };
+  }, []);
 
   useEffect(() => {
     try {
@@ -78,6 +103,7 @@ export function VaultSidebar({
 
   const isDashboard = currentRoute === 'dashboard';
   const isTimeline = currentRoute === 'timeline' && activeFilter !== 'favs';
+  const isAlbums = currentRoute === 'albums';
   const isFavorites = currentRoute === 'favorites' || activeFilter === 'favs';
   const isEditor = currentRoute === 'editor';
 
@@ -126,7 +152,22 @@ export function VaultSidebar({
           >
             <Clock className={`w-4 h-4 ${isTimeline ? 'text-[#adc6ff]' : ''}`} />
             <span>Timeline</span>
-            <span className="ml-auto text-xs text-[#8c909f] font-mono">15</span>
+          </Link>
+
+          {/* Albums Link */}
+          <Link
+            href="/albums"
+            className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium w-full text-left transition-colors pressable ${
+              isAlbums
+                ? 'text-[#adc6ff] bg-white/10 shadow-sm border border-white/10 font-semibold'
+                : 'text-[#c2c6d6] hover:bg-white/5 hover:text-white'
+            }`}
+          >
+            <FolderPlus className={`w-4 h-4 ${isAlbums ? 'text-[#adc6ff]' : ''}`} />
+            <span>My Albums</span>
+            <span className="ml-auto text-xs text-[#8c909f] font-mono">
+              {albumsCount !== undefined ? albumsCount : liveAlbumsCount}
+            </span>
           </Link>
 
           {/* Favorites Link */}
@@ -140,12 +181,12 @@ export function VaultSidebar({
           >
             <Heart
               className={`w-4 h-4 transition-colors ${
-                isFavorites || favoritesCount > 0 ? 'text-[#adc6ff]' : ''
+                isFavorites || (favoritesCount ?? liveFavCount) > 0 ? 'text-[#adc6ff]' : ''
               } ${isFavorites ? 'fill-[#adc6ff]' : ''}`}
             />
             <span>Favorites</span>
             <span className="ml-auto text-xs text-[#8c909f] font-mono">
-              {favoritesCount}
+              {favoritesCount !== undefined ? favoritesCount : liveFavCount}
             </span>
           </Link>
 
@@ -245,7 +286,11 @@ export function VaultSidebar({
       </aside>
 
       {/* Direct Upload Modal */}
-      <UploadMediaDialog open={isUploadOpen} onOpenChange={setIsUploadOpen} />
+      <UploadMediaDialog
+        open={isUploadOpen}
+        onOpenChange={setIsUploadOpen}
+        onUploadComplete={() => router.refresh()}
+      />
     </>
   );
 }

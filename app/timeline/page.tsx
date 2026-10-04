@@ -1,39 +1,45 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   Menu,
   Search,
   Bell,
   Heart,
-  Play,
-  LogOut,
   Upload,
-  Shield,
   Sparkles,
-  SlidersHorizontal,
   Calendar,
   MapPin,
   Camera,
-  Maximize2,
   X,
   Share2,
   Grid3X3,
   LayoutGrid,
+  Loader2,
+  AlertCircle,
+  Download,
+  RefreshCw,
+  HardDrive,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { VaultSidebar } from '@/components/vault-sidebar';
 import { VaultMobileNav } from '@/components/vault-mobile-nav';
+import { UploadMediaDialog } from '@/components/upload-media-dialog';
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  getStoredFavorites,
+  toggleStoredFavorite,
+} from '@/lib/favorites';
 
-interface PhotoItem {
+export interface PhotoItem {
   id: string;
   src: string;
   caption: string;
@@ -42,9 +48,14 @@ interface PhotoItem {
   time: string;
   camera: string;
   tags: string[];
+  originalSize: number;
+  compressedSize: number;
+  width?: number;
+  height?: number;
+  rawDate: Date;
 }
 
-interface DateGroup {
+export interface DateGroup {
   month: string;
   year: string;
   label: string;
@@ -52,201 +63,134 @@ interface DateGroup {
   photos: PhotoItem[];
 }
 
-const TIMELINE_DATA: DateGroup[] = [
-  {
-    month: 'August',
-    year: '2026',
-    label: 'Paris Family Trip',
-    count: 6,
-    photos: [
-      {
-        id: 'aug-1',
-        src: 'https://images.unsplash.com/photo-1502602898657-3e91760cbb34?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Morning in Le Marais',
-        location: 'Paris, France',
-        date: 'Aug 18, 2026',
-        time: '08:42 AM',
-        camera: 'Leica Q3 • 28mm f/1.7',
-        tags: ['Travel', 'Elena', 'Breakfast'],
-      },
-      {
-        id: 'aug-2',
-        src: 'https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Strolling through Montmartre',
-        location: 'Montmartre, Paris',
-        date: 'Aug 16, 2026',
-        time: '06:15 PM',
-        camera: 'Sony A7 IV • 50mm f/1.4 GM',
-        tags: ['Sunset', 'Kids', 'Architecture'],
-      },
-      {
-        id: 'aug-3',
-        src: 'https://images.unsplash.com/photo-1550340499-a6c60fc8287c?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Fresh Baguettes & Espresso',
-        location: 'Rue Cler, Paris',
-        date: 'Aug 15, 2026',
-        time: '09:10 AM',
-        camera: 'Fujifilm X100V • 23mm f/2',
-        tags: ['Food', 'Morning'],
-      },
-      {
-        id: 'aug-4',
-        src: 'https://images.unsplash.com/photo-1543349689-9a4d426bee8e?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Eiffel Illuminations',
-        location: 'Champ de Mars, Paris',
-        date: 'Aug 14, 2026',
-        time: '10:30 PM',
-        camera: 'Sony A7 IV • 24-70mm f/2.8',
-        tags: ['Night', 'Elena', 'Celebration'],
-      },
-      {
-        id: 'aug-5',
-        src: 'https://images.unsplash.com/photo-1567959672803-d7d71f244e1f?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Glass Pyramid Symmetry',
-        location: 'Musée du Louvre, Paris',
-        date: 'Aug 12, 2026',
-        time: '03:45 PM',
-        camera: 'Leica Q3 • 28mm f/1.7',
-        tags: ['Museum', 'Art'],
-      },
-      {
-        id: 'aug-6',
-        src: 'https://images.unsplash.com/photo-1520250497591-112f2f40a3f4?w=1200&auto=format&fit=crop&q=85',
-        caption: 'TGV to the Countryside',
-        location: 'Gare de Lyon, Paris',
-        date: 'Aug 10, 2026',
-        time: '11:20 AM',
-        camera: 'Fujifilm X100V • 23mm f/2',
-        tags: ['Transit', 'Landscape'],
-      },
-    ],
-  },
-  {
-    month: 'July',
-    year: '2026',
-    label: 'Cabin Weekend & Pines',
-    count: 5,
-    photos: [
-      {
-        id: 'jul-7',
-        src: 'https://images.unsplash.com/photo-1476231682828-37e571bc172f?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Misty Dawn by the Lake',
-        location: 'Lake Tahoe, CA',
-        date: 'Jul 26, 2026',
-        time: '05:55 AM',
-        camera: 'Canon EOS R5 • 24-105mm f/4',
-        tags: ['Nature', 'Peaceful'],
-      },
-      {
-        id: 'jul-8',
-        src: 'https://images.unsplash.com/photo-1508193638397-1c4234db14d8?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Evening Campfire Stories',
-        location: 'Emerald Bay Cabin',
-        date: 'Jul 25, 2026',
-        time: '09:05 PM',
-        camera: 'Fujifilm X100V • 23mm f/2',
-        tags: ['Family', 'Bonfire', 'Kids'],
-      },
-      {
-        id: 'jul-9',
-        src: 'https://images.unsplash.com/photo-1504280390367-361c6d9f38f4?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Rest on the Granite Trail',
-        location: 'Sierra Nevada Trail',
-        date: 'Jul 24, 2026',
-        time: '01:30 PM',
-        camera: 'Sony A7 IV • 35mm f/1.4',
-        tags: ['Hiking', 'Adventure'],
-      },
-      {
-        id: 'jul-10',
-        src: 'https://images.unsplash.com/photo-1501854140801-50d01698950b?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Pine Needle Forest Canopy',
-        location: 'Tahoe National Forest',
-        date: 'Jul 23, 2026',
-        time: '11:15 AM',
-        camera: 'Canon EOS R5 • 50mm f/1.2',
-        tags: ['Forest', 'Macro'],
-      },
-      {
-        id: 'jul-11',
-        src: 'https://images.unsplash.com/photo-1444080748397-f442aa105c77?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Midnight Dock Stargazing',
-        location: 'Fallen Leaf Lake',
-        date: 'Jul 22, 2026',
-        time: '11:50 PM',
-        camera: 'Sony A7 IV • 14mm f/1.8 GM',
-        tags: ['Stars', 'LongExposure', 'Elena'],
-      },
-    ],
-  },
-  {
-    month: 'May',
-    year: '2026',
-    label: 'Home & Backyard Garden',
-    count: 4,
-    photos: [
-      {
-        id: 'may-12',
-        src: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Barnaby Dozing in Morning Sun',
-        location: 'Living Room Hearth',
-        date: 'May 17, 2026',
-        time: '07:40 AM',
-        camera: 'Leica Q3 • 28mm f/1.7',
-        tags: ['Pets', 'Barnaby', 'Cozy'],
-      },
-      {
-        id: 'may-13',
-        src: 'https://images.unsplash.com/photo-1521747116042-5a810fda9664?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Late Night Reading Nook',
-        location: 'Study & Library',
-        date: 'May 12, 2026',
-        time: '11:10 PM',
-        camera: 'Fujifilm X100V • 23mm f/2',
-        tags: ['Books', 'StillLife'],
-      },
-      {
-        id: 'may-14',
-        src: 'https://images.unsplash.com/photo-1519692933481-e162a57d6721?w=1200&auto=format&fit=crop&q=85',
-        caption: 'Spring Rainfall on Windowpane',
-        location: 'Kitchen Bay Window',
-        date: 'May 08, 2026',
-        time: '04:22 PM',
-        camera: 'Sony A7 IV • 90mm Macro f/2.8',
-        tags: ['Rain', 'Macro', 'Reflections'],
-      },
-      {
-        id: 'may-15',
-        src: 'https://images.unsplash.com/photo-1416169607655-0c2b3ce2e1cc?w=1200&auto=format&fit=crop&q=85',
-        caption: 'First Heirloom Tomato Sprouts',
-        location: 'Backyard Greenhouse',
-        date: 'May 02, 2026',
-        time: '10:00 AM',
-        camera: 'Leica Q3 • 28mm f/1.7',
-        tags: ['Garden', 'Greenhouse', 'Spring'],
-      },
-    ],
-  },
-];
-
-const FILTER_PILLS = [
-  { id: 'all', label: 'All Memories' },
-  { id: 'favs', label: 'Favorites' },
-  { id: 'paris', label: 'Paris 2026' },
-  { id: 'cabin', label: 'Cabin Weekend' },
-  { id: 'home', label: 'Home' },
-];
-
 export default function TimelinePage() {
-  const [favorites, setFavorites] = useState<Set<string>>(
-    new Set(['aug-3', 'jul-8', 'may-14'])
-  );
+  const router = useRouter();
+
+  const [photos, setPhotos] = useState<PhotoItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [activePill, setActivePill] = useState<string>('all');
   const [search, setSearch] = useState('');
   const [gridDensity, setGridDensity] = useState<'cozy' | 'compact'>('cozy');
   const [activePhoto, setActivePhoto] = useState<PhotoItem | null>(null);
   const [justToggledId, setJustToggledId] = useState<string | null>(null);
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
 
+  // Sync favorites with shared storage
+  useEffect(() => {
+    setFavorites(getStoredFavorites());
+
+    const handleFavUpdate = () => {
+      setFavorites(getStoredFavorites());
+    };
+    window.addEventListener('vault-favorites-updated', handleFavUpdate);
+    return () => {
+      window.removeEventListener('vault-favorites-updated', handleFavUpdate);
+    };
+  }, []);
+
+  // Window-level drag-and-drop listener to open upload modal
+  useEffect(() => {
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+    };
+    const handleWindowDrop = (e: DragEvent) => {
+      if (
+        e.dataTransfer &&
+        e.dataTransfer.files &&
+        e.dataTransfer.files.length > 0
+      ) {
+        e.preventDefault();
+        setIsUploadOpen(true);
+      }
+    };
+
+    window.addEventListener('dragover', handleDragOver);
+    window.addEventListener('drop', handleWindowDrop);
+    return () => {
+      window.removeEventListener('dragover', handleDragOver);
+      window.removeEventListener('drop', handleWindowDrop);
+    };
+  }, []);
+
+  // Fetch real photos from /api/images
+  const fetchPhotos = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const res = await fetch('/api/images');
+      if (!res.ok) {
+        if (res.status === 401) {
+          router.push('/login');
+          return;
+        }
+        throw new Error(`Failed to load vault photos (HTTP ${res.status})`);
+      }
+
+      const data = await res.json();
+      const rawImages: any[] = data.images || [];
+
+      const mapped: PhotoItem[] = rawImages.map((img: any) => {
+        const d = new Date(img.createdAt);
+        const cleanName = (img.originalFilename || 'Memory').replace(
+          /\.[^/.]+$/,
+          ''
+        );
+        const compKB = Math.round((img.compressedSizeBytes || 0) / 1024);
+        const savedPercent =
+          img.originalSizeBytes && img.compressedSizeBytes
+            ? Math.round(
+                (1 - img.compressedSizeBytes / img.originalSizeBytes) * 100
+              )
+            : 0;
+
+        return {
+          id: img.id,
+          src: img.signedUrl || `/api/images/${img.id}/view`,
+          caption: cleanName,
+          location: 'Cloud Vault',
+          date: d.toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          }),
+          time: d.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          camera:
+            img.width && img.height
+              ? `${img.width} × ${img.height} • WebP (${compKB} KB)`
+              : `WebP • ${compKB} KB`,
+          tags: [
+            'R2 Vault',
+            'WebP',
+            savedPercent > 0 ? `-${savedPercent}%` : 'Optimized',
+          ],
+          originalSize: img.originalSizeBytes || 0,
+          compressedSize: img.compressedSizeBytes || 0,
+          width: img.width,
+          height: img.height,
+          rawDate: d,
+        };
+      });
+
+      // Sort by newest date first
+      mapped.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
+      setPhotos(mapped);
+    } catch (err: any) {
+      setError(err.message || 'Unable to connect to vault storage.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [router]);
+
+  useEffect(() => {
+    fetchPhotos();
+  }, [fetchPhotos]);
+
+  // Toggle favorite with feedback bounce & persistent storage
   const toggleFav = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -254,41 +198,86 @@ export default function TimelinePage() {
     setJustToggledId(id);
     setTimeout(() => setJustToggledId(null), 300);
 
-    setFavorites((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
+    toggleStoredFavorite(id);
+    setFavorites(getStoredFavorites());
   };
 
-  // Filter groups
+  // Group photos into DateGroup sections by Month & Year
+  const dateGroups = useMemo(() => {
+    const groupsMap = new Map<
+      string,
+      { month: string; year: string; photos: PhotoItem[] }
+    >();
+
+    photos.forEach((photo) => {
+      const year = photo.rawDate.getFullYear().toString();
+      const month = photo.rawDate.toLocaleString('en-US', { month: 'long' });
+      const key = `${year}-${photo.rawDate.getMonth()}`;
+
+      if (!groupsMap.has(key)) {
+        groupsMap.set(key, { month, year, photos: [] });
+      }
+      groupsMap.get(key)!.photos.push(photo);
+    });
+
+    return Array.from(groupsMap.values()).map((g) => ({
+      month: g.month,
+      year: g.year,
+      label: `${g.month} ${g.year}`,
+      count: g.photos.length,
+      photos: g.photos,
+    }));
+  }, [photos]);
+
+  // Dynamic filter pills based on real data
+  const filterPills = useMemo(() => {
+    const pills = [
+      { id: 'all', label: `All Memories (${photos.length})` },
+      { id: 'favs', label: `Favorites (${favorites.size})` },
+    ];
+
+    dateGroups.forEach((g) => {
+      const id = `${g.month.toLowerCase()}-${g.year}`;
+      pills.push({ id, label: `${g.month} ${g.year} (${g.photos.length})` });
+    });
+
+    return pills;
+  }, [photos.length, favorites.size, dateGroups]);
+
+  // Filter groups according to search & active pill
   const filteredGroups = useMemo(() => {
-    return TIMELINE_DATA.map((group) => {
-      const photos = group.photos.filter((p) => {
-        // Search text matching
-        const matchesSearch =
-          p.caption.toLowerCase().includes(search.toLowerCase()) ||
-          p.location.toLowerCase().includes(search.toLowerCase()) ||
-          p.tags.some((t) => t.toLowerCase().includes(search.toLowerCase())) ||
-          group.month.toLowerCase().includes(search.toLowerCase()) ||
-          group.label.toLowerCase().includes(search.toLowerCase());
+    const q = search.trim().toLowerCase();
 
-        if (!matchesSearch) return false;
+    return dateGroups
+      .map((group) => {
+        const matchingPhotos = group.photos.filter((p) => {
+          // Pill filter
+          if (activePill === 'favs' && !favorites.has(p.id)) return false;
+          const groupPillId = `${group.month.toLowerCase()}-${group.year}`;
+          if (
+            activePill !== 'all' &&
+            activePill !== 'favs' &&
+            activePill !== groupPillId
+          ) {
+            return false;
+          }
 
-        // Pill matching
-        if (activePill === 'favs') return favorites.has(p.id);
-        if (activePill === 'paris') return group.label.includes('Paris');
-        if (activePill === 'cabin') return group.label.includes('Cabin');
-        if (activePill === 'home') return group.label.includes('Home');
-        return true;
-      });
-      return { ...group, photos };
-    }).filter((g) => g.photos.length > 0);
-  }, [search, activePill, favorites]);
+          // Search text filter
+          if (!q) return true;
+          return (
+            p.caption.toLowerCase().includes(q) ||
+            p.date.toLowerCase().includes(q) ||
+            p.camera.toLowerCase().includes(q) ||
+            group.month.toLowerCase().includes(q) ||
+            group.year.includes(q) ||
+            p.tags.some((t) => t.toLowerCase().includes(q))
+          );
+        });
+
+        return { ...group, photos: matchingPhotos };
+      })
+      .filter((g) => g.photos.length > 0);
+  }, [dateGroups, search, activePill, favorites]);
 
   const totalFilteredPhotos = useMemo(() => {
     return filteredGroups.reduce((acc, g) => acc + g.photos.length, 0);
@@ -296,7 +285,7 @@ export default function TimelinePage() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#0a0a0a] text-[#e5e2e1] font-[family-name:var(--font-inter)] selection:bg-[#4d8eff]/30 selection:text-white">
-      {/* ── Desktop Sidebar (Consistent across Dashboard & Timeline) ── */}
+      {/* ── Desktop Sidebar ── */}
       <VaultSidebar
         currentRoute="timeline"
         activeFilter={activePill}
@@ -306,9 +295,9 @@ export default function TimelinePage() {
 
       {/* ── Main Viewport ── */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden relative">
-        {/* ── Floating Header (Frosted glass chrome with top reflection) ── */}
+        {/* ── Floating Header ── */}
         <header className="sticky top-0 z-40 glass-panel border-b border-white/10 border-t border-t-white/15 px-4 md:px-8 py-3.5 flex justify-between items-center shrink-0 backdrop-blur-2xl">
-          {/* Left Title / Breadcrumb */}
+          {/* Left Title */}
           <div className="flex items-center gap-3">
             <Link
               href="/dashboard"
@@ -321,20 +310,43 @@ export default function TimelinePage() {
                 Vault Timeline
               </h1>
               <p className="text-[11px] text-[#8c909f] hidden sm:block">
-                {totalFilteredPhotos} memories securely preserved
+                {isLoading
+                  ? 'Loading memories...'
+                  : `${photos.length} photos preserved in Cloudflare R2`}
               </p>
             </div>
           </div>
 
-          {/* Right Tools (Search, Density Switcher, Profile) */}
+          {/* Right Tools */}
           <div className="flex items-center gap-2.5">
+            {/* Refresh Button */}
+            <button
+              onClick={fetchPhotos}
+              disabled={isLoading}
+              className="text-[#c2c6d6] hover:text-white hover:bg-white/5 p-2 rounded-full transition-colors pressable disabled:opacity-50"
+              title="Refresh timeline"
+            >
+              <RefreshCw
+                className={`w-4 h-4 ${isLoading ? 'animate-spin text-[#3b82f6]' : ''}`}
+              />
+            </button>
+
+            {/* Direct Upload Shortcut */}
+            <Button
+              onClick={() => setIsUploadOpen(true)}
+              className="hidden sm:flex btn-vault text-xs rounded-xl px-3 py-1.5 font-semibold items-center gap-1.5 shadow-[0_0_15px_rgba(59,130,246,0.25)]"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Upload</span>
+            </Button>
+
             {/* Search Bar */}
             <div className="glass-panel rounded-full px-3.5 py-1.5 hidden sm:flex items-center gap-2 w-48 lg:w-64 border border-white/10 focus-within:border-[#3b82f6]/50 focus-within:ring-2 focus-within:ring-[#3b82f6]/20 transition-all">
               <Search className="w-4 h-4 text-[#8c909f] shrink-0" />
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search places, family, tags…"
+                placeholder="Search caption, date, specs…"
                 className="bg-transparent border-none outline-none text-xs text-[#e5e2e1] placeholder:text-[#8c909f] w-full"
               />
               {search && (
@@ -373,14 +385,6 @@ export default function TimelinePage() {
               </button>
             </div>
 
-            {/* Notification Bell */}
-            <button
-              className="text-[#c2c6d6] hover:text-white hover:bg-white/5 p-2 rounded-full transition-colors pressable"
-              title="Recent Activity"
-            >
-              <Bell className="w-4 h-4" />
-            </button>
-
             {/* Avatar */}
             <Avatar className="w-8 h-8 border border-white/20 pressable">
               <AvatarFallback className="bg-[#201f1f] text-[#adc6ff] text-xs font-semibold">
@@ -392,7 +396,7 @@ export default function TimelinePage() {
 
         {/* ── Subheader Filters Pill Bar ── */}
         <div className="sticky top-[58px] z-30 bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/5 px-4 md:px-8 py-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar">
-          {FILTER_PILLS.map((pill) => {
+          {filterPills.map((pill) => {
             const isActive = activePill === pill.id;
             return (
               <button
@@ -412,17 +416,67 @@ export default function TimelinePage() {
 
         {/* ── Gallery Scrollable Canvas ── */}
         <div className="flex-1 overflow-y-auto px-4 md:px-8 lg:px-12 pb-24 md:pb-12 pt-6">
-          {filteredGroups.length === 0 ? (
+          {/* Loading State */}
+          {isLoading && photos.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-28 text-center">
+              <Loader2 className="w-8 h-8 text-[#3b82f6] animate-spin mb-3" />
+              <p className="text-sm font-semibold text-[#e5e2e1]">
+                Accessing Vault Memories...
+              </p>
+              <p className="text-xs text-[#8c909f] mt-1 max-w-xs">
+                Fetching photo records and generating secure access tokens from Cloudflare R2
+              </p>
+            </div>
+          ) : error ? (
+            /* Error State */
+            <div className="flex flex-col items-center justify-center py-20 text-center max-w-sm mx-auto">
+              <div className="w-14 h-14 rounded-2xl bg-red-950/40 border border-red-500/30 flex items-center justify-center mb-3 text-red-400">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <h3 className="font-semibold text-white text-base">
+                Could not load photos
+              </h3>
+              <p className="text-xs text-red-300/80 mt-1">{error}</p>
+              <Button
+                onClick={fetchPhotos}
+                className="mt-4 btn-vault text-xs rounded-xl px-4 py-2"
+              >
+                Try Again
+              </Button>
+            </div>
+          ) : photos.length === 0 ? (
+            /* Empty State: No photos in vault */
+            <div className="flex flex-col items-center justify-center py-24 text-center max-w-sm mx-auto">
+              <div className="w-16 h-16 rounded-2xl bg-[#1e293b]/70 border border-white/10 flex items-center justify-center mb-4 shadow-inner">
+                <Upload className="w-8 h-8 text-[#adc6ff]" />
+              </div>
+              <h3 className="font-[family-name:var(--font-manrope)] text-lg font-bold text-[#e5e2e1]">
+                Your Vault is Empty
+              </h3>
+              <p className="text-xs text-[#8c909f] mt-1.5 leading-relaxed">
+                Start storing and preserving your family memories. Photos are automatically compressed to WebP and saved in Cloudflare R2.
+              </p>
+              <Button
+                onClick={() => setIsUploadOpen(true)}
+                className="mt-5 btn-vault text-xs font-semibold px-5 py-2.5 rounded-xl shadow-[0_0_20px_rgba(59,130,246,0.3)] pressable"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                <span>Upload Photos</span>
+              </Button>
+            </div>
+          ) : filteredGroups.length === 0 ? (
+            /* Empty State: Search or filter has 0 results */
             <div className="flex flex-col items-center justify-center py-24 text-center max-w-sm mx-auto">
               <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-4">
                 <Search className="w-6 h-6 text-[#8c909f]" />
               </div>
               <h3 className="font-[family-name:var(--font-manrope)] text-lg font-semibold text-[#e5e2e1]">
-                No memories found
+                No matching photos
               </h3>
               <p className="text-xs text-[#8c909f] mt-1.5 leading-relaxed">
-                We couldn&apos;t find any photos matching &ldquo;{search}&rdquo;. Try another
-                keyword or reset your filter pill.
+                {activePill === 'favs'
+                  ? 'No favorites match your current search. Tap the heart icon on any photo to add it to favorites.'
+                  : `We couldn't find any photos matching "${search}".`}
               </p>
               <Button
                 variant="outline"
@@ -436,20 +490,22 @@ export default function TimelinePage() {
               </Button>
             </div>
           ) : (
+            /* Real Photos Rendered */
             filteredGroups.map((group, groupIdx) => (
               <section key={group.month + group.year} className="mb-10 relative">
-                {/* Floating Date Header */}
-                <div className="sticky top-[108px] z-20 glass-panel -mx-4 md:mx-0 px-4 md:px-6 py-2.5 mb-3.5 rounded-none md:rounded-xl flex items-center justify-between border-x-0 md:border-x border-white/10 shadow-lg">
-                  <div className="flex items-baseline gap-2.5">
-                    <h2 className="font-[family-name:var(--font-manrope)] text-base md:text-lg font-bold text-[#e5e2e1]">
+                {/* Date Group Header */}
+                <div className="sticky top-0 z-20 bg-[#0a0a0a]/95 backdrop-blur-xl px-4 py-2.5 mb-4 rounded-xl flex items-center justify-between border border-white/10 shadow-lg">
+                  <div className="flex items-center gap-3">
+                    <h2 className="font-[family-name:var(--font-manrope)] text-base md:text-lg font-bold text-white tracking-tight">
                       {group.month} {group.year}
                     </h2>
-                    <span className="text-[11px] text-[#adc6ff] font-medium tracking-wide">
-                      {group.label}
+                    <span className="text-[11px] text-[#adc6ff] bg-[#3b82f6]/15 border border-[#3b82f6]/25 px-2.5 py-0.5 rounded-full font-medium">
+                      Vault Archive
                     </span>
                   </div>
-                  <span className="text-[11px] text-[#8c909f] font-mono">
-                    {group.photos.length} {group.photos.length === 1 ? 'photo' : 'photos'}
+                  <span className="text-xs text-[#8c909f] font-mono">
+                    {group.photos.length}{' '}
+                    {group.photos.length === 1 ? 'photo' : 'photos'}
                   </span>
                 </div>
 
@@ -464,18 +520,19 @@ export default function TimelinePage() {
                   {group.photos.map((photo, photoIdx) => {
                     const isFav = favorites.has(photo.id);
                     const isBumping = justToggledId === photo.id;
-
-                    // Stagger delay calculation for smooth cascading entrance
-                    const staggerDelay = Math.min((groupIdx * 4 + photoIdx) * 35, 300);
+                    const staggerDelay = Math.min(
+                      (groupIdx * 4 + photoIdx) * 35,
+                      300
+                    );
 
                     return (
                       <div
                         key={photo.id}
                         style={{ animationDelay: `${staggerDelay}ms` }}
                         onClick={() => setActivePhoto(photo)}
-                        className="timeline-card-enter memory-card aspect-square group cursor-pointer relative block select-none overflow-hidden"
+                        className="timeline-card-enter memory-card aspect-square group cursor-pointer relative block select-none overflow-hidden rounded-xl border border-white/10"
                       >
-                        {/* Photo Image with smooth hardware scale */}
+                        {/* Real Image */}
                         <img
                           src={photo.src}
                           alt={photo.caption}
@@ -486,11 +543,13 @@ export default function TimelinePage() {
                         {/* Top Gradient for Favorite Button Visibility */}
                         <div className="absolute top-0 inset-x-0 h-14 bg-gradient-to-b from-black/60 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
 
-                        {/* Favorite Button with Spring Micro-Bounce */}
+                        {/* Favorite Button */}
                         <button
                           type="button"
                           onClick={(e) => toggleFav(e, photo.id)}
-                          aria-label={isFav ? 'Remove from favorites' : 'Add to favorites'}
+                          aria-label={
+                            isFav ? 'Remove from favorites' : 'Add to favorites'
+                          }
                           className={`fav-icon absolute top-2.5 right-2.5 p-2 rounded-full backdrop-blur-md transition-all duration-200 ${
                             isFav
                               ? 'bg-black/60 text-[#adc6ff] opacity-100'
@@ -499,7 +558,9 @@ export default function TimelinePage() {
                         >
                           <Heart
                             className={`w-4 h-4 transition-colors ${
-                              isFav ? 'fill-[#adc6ff] text-[#adc6ff]' : 'text-white'
+                              isFav
+                                ? 'fill-[#adc6ff] text-[#adc6ff]'
+                                : 'text-white'
                             }`}
                           />
                         </button>
@@ -510,8 +571,8 @@ export default function TimelinePage() {
                             {photo.caption}
                           </p>
                           <div className="flex items-center gap-1 text-[10px] text-[#c2c6d6] mt-0.5">
-                            <MapPin className="w-3 h-3 text-[#adc6ff] shrink-0" />
-                            <span className="truncate">{photo.location}</span>
+                            <Calendar className="w-3 h-3 text-[#adc6ff] shrink-0" />
+                            <span className="truncate">{photo.date}</span>
                           </div>
                         </div>
                       </div>
@@ -524,17 +585,22 @@ export default function TimelinePage() {
         </div>
       </main>
 
-      {/* ── Apple-Grade Photo Inspector / Lightbox Modal ── */}
-      <Dialog open={!!activePhoto} onOpenChange={(open) => !open && setActivePhoto(null)}>
+      {/* ── Photo Details / Lightbox Modal ── */}
+      <Dialog
+        open={!!activePhoto}
+        onOpenChange={(open) => !open && setActivePhoto(null)}
+      >
         <DialogContent className="max-w-4xl bg-[#131313]/95 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-0 overflow-hidden rounded-2xl shadow-2xl">
           <DialogHeader className="sr-only">
-            <DialogTitle>{activePhoto?.caption || 'Photo Details'}</DialogTitle>
+            <DialogTitle>
+              {activePhoto?.caption || 'Photo Details'}
+            </DialogTitle>
           </DialogHeader>
 
           {activePhoto && (
             <div className="flex flex-col lg:flex-row h-full max-h-[85vh]">
               {/* Photo Display */}
-              <div className="flex-1 bg-black/60 flex items-center justify-center p-4 relative min-h-[300px] lg:min-h-[500px]">
+              <div className="flex-1 bg-black/70 flex items-center justify-center p-4 relative min-h-[300px] lg:min-h-[500px]">
                 <img
                   src={activePhoto.src}
                   alt={activePhoto.caption}
@@ -556,31 +622,46 @@ export default function TimelinePage() {
                     </div>
                   </div>
 
-                  {/* Metadata Specs (Apple Photos Info Panel Style) */}
-                  <div className="glass-panel rounded-xl p-3.5 flex flex-col gap-2.5 border-white/10">
-                    <div className="flex items-center justify-between text-xs">
+                  {/* Metadata Specs */}
+                  <div className="glass-panel rounded-xl p-3.5 flex flex-col gap-2.5 border-white/10 text-xs">
+                    <div className="flex items-center justify-between">
                       <span className="text-[#8c909f] flex items-center gap-1.5">
-                        <Calendar className="w-3.5 h-3.5" /> Date Taken
+                        <Calendar className="w-3.5 h-3.5" /> Date Added
                       </span>
                       <span className="font-mono text-[#e5e2e1]">
                         {activePhoto.date} • {activePhoto.time}
                       </span>
                     </div>
 
-                    <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center justify-between">
                       <span className="text-[#8c909f] flex items-center gap-1.5">
-                        <Camera className="w-3.5 h-3.5" /> Camera Lens
+                        <Camera className="w-3.5 h-3.5" /> Format & Size
                       </span>
                       <span className="text-right text-[#e5e2e1] truncate max-w-[140px]">
                         {activePhoto.camera}
                       </span>
                     </div>
+
+                    {activePhoto.originalSize > 0 && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-[#8c909f] flex items-center gap-1.5">
+                          <HardDrive className="w-3.5 h-3.5" /> Original Size
+                        </span>
+                        <span className="text-right text-[#e5e2e1] font-mono">
+                          {(
+                            activePhoto.originalSize /
+                            (1024 * 1024)
+                          ).toFixed(2)}{' '}
+                          MB
+                        </span>
+                      </div>
+                    )}
                   </div>
 
-                  {/* Family & Content Tags */}
+                  {/* Tags */}
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-[#8c909f] mb-2">
-                      Sanctuary Tags
+                      Storage Metadata
                     </p>
                     <div className="flex flex-wrap gap-1.5">
                       {activePhoto.tags.map((tag) => (
@@ -597,7 +678,7 @@ export default function TimelinePage() {
 
                 {/* Action Buttons */}
                 <div className="flex flex-col gap-2.5 pt-6 mt-6 border-t border-white/10">
-                  <Link href="/editor" className="w-full">
+                  <Link href={`/editor?photoId=${activePhoto.id}`} className="w-full">
                     <Button className="w-full py-5 btn-vault rounded-xl text-sm font-semibold flex items-center justify-center gap-2 pressable shadow-[0_0_20px_rgba(59,130,246,0.3)]">
                       <Sparkles className="w-4 h-4" />
                       <span>Open in AI Photo Editor</span>
@@ -609,26 +690,40 @@ export default function TimelinePage() {
                       variant="outline"
                       onClick={(e) => toggleFav(e, activePhoto.id)}
                       className={`flex-1 glass-button rounded-xl text-xs gap-1.5 ${
-                        favorites.has(activePhoto.id) ? 'text-[#adc6ff]' : 'text-[#c2c6d6]'
+                        favorites.has(activePhoto.id)
+                          ? 'text-[#adc6ff]'
+                          : 'text-[#c2c6d6]'
                       }`}
                     >
                       <Heart
                         className={`w-3.5 h-3.5 ${
-                          favorites.has(activePhoto.id) ? 'fill-[#adc6ff]' : ''
+                          favorites.has(activePhoto.id)
+                            ? 'fill-[#adc6ff]'
+                            : ''
                         }`}
                       />
                       <span>
-                        {favorites.has(activePhoto.id) ? 'Favorited' : 'Favorite'}
+                        {favorites.has(activePhoto.id)
+                          ? 'Favorited'
+                          : 'Favorite'}
                       </span>
                     </Button>
 
-                    <Button
-                      variant="outline"
-                      className="glass-button rounded-xl text-xs px-3 text-[#c2c6d6]"
-                      title="Share link"
+                    <a
+                      href={activePhoto.src}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      download={`${activePhoto.caption}.webp`}
+                      className="inline-flex"
                     >
-                      <Share2 className="w-3.5 h-3.5" />
-                    </Button>
+                      <Button
+                        variant="outline"
+                        className="glass-button rounded-xl text-xs px-3 text-[#c2c6d6]"
+                        title="Download image"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </Button>
+                    </a>
                   </div>
                 </div>
               </div>
@@ -637,7 +732,14 @@ export default function TimelinePage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Mobile Bottom Navigation (Consistent Home, Timeline, Favorites, AI Studio, Upload) ── */}
+      {/* ── Direct Upload Modal ── */}
+      <UploadMediaDialog
+        open={isUploadOpen}
+        onOpenChange={setIsUploadOpen}
+        onUploadComplete={fetchPhotos}
+      />
+
+      {/* ── Mobile Navigation ── */}
       <VaultMobileNav
         currentRoute="timeline"
         activeFilter={activePill}

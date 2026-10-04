@@ -42,6 +42,7 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/dashboard') ||
     pathname.startsWith('/timeline') ||
     pathname.startsWith('/favorites') ||
+    pathname.startsWith('/albums') ||
     pathname.startsWith('/editor') ||
     pathname.startsWith('/create-album');
 
