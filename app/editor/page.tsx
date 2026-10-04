@@ -53,6 +53,7 @@ import {
   ChevronDown,
   ChevronRight,
   Search,
+  X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -62,6 +63,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Drawer,
+  DrawerContent,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerClose,
+} from '@/components/ui/drawer';
 import { UploadMediaDialog } from '@/components/upload-media-dialog';
 
 interface RealPhoto {
@@ -369,6 +379,7 @@ function AIEditorInner() {
   const [isPhotoLoading, setIsPhotoLoading] = useState(true);
   const [isPhotoPickerOpen, setIsPhotoPickerOpen] = useState(false);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [selectedTool, setSelectedTool] = useState<AITool>(ALL_TOOLS[0]);
@@ -546,6 +557,7 @@ function AIEditorInner() {
   const handleApplyTransform = async () => {
     if (!selectedPhoto || isProcessing) return;
 
+    setIsDrawerOpen(false);
     setIsProcessing(true);
     setErrorMessage(null);
     setSavedSuccess(false);
@@ -639,64 +651,373 @@ function AIEditorInner() {
     };
   }, []);
 
-  return (
-    <div className="bg-[#0a0a0a] text-[#e5e2e1] h-screen overflow-hidden antialiased font-[family-name:var(--font-inter)] selection:bg-[#4d8eff]/30 selection:text-white flex flex-col md:flex-row relative">
-      {/* ── Main Canvas Viewport ── */}
-      <main className="flex-1 min-w-0 min-h-0 relative h-[60vh] md:h-full w-full flex items-center justify-center p-3 md:p-8 lg:p-12 bg-[#090909]">
-        {/* Top Floating Control Bar */}
-        <div className="absolute top-4 inset-x-4 md:top-6 md:inset-x-8 z-30 flex items-center justify-between pointer-events-none">
-          {/* Back button */}
-          <Link
-            href="/timeline"
-            className="pointer-events-auto flex items-center gap-2 glass-button px-4 py-2 rounded-full text-xs font-semibold text-[#e5e2e1] hover:text-white transition-all hover:scale-105 shadow-xl pressable border-white/15"
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Timeline</span>
-          </Link>
+  const renderToolSections = () => (
+    <div className="flex flex-col gap-5 sm:gap-6">
+      {/* Error Banner */}
+      {errorMessage && (
+        <div className="p-3 rounded-xl bg-red-950/30 border border-red-500/30 text-xs text-red-300 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
 
-          {/* Switch Photo Button */}
-          {allPhotos.length > 1 && (
-            <button
-              onClick={() => setIsPhotoPickerOpen(true)}
-              className="pointer-events-auto flex items-center gap-2 glass-button px-3.5 py-1.5 rounded-full text-xs font-medium text-[#adc6ff] hover:text-white border-white/15 pressable shadow-xl"
-            >
-              <Images className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Switch Photo</span>
-              <span className="text-[10px] text-[#8c909f] font-mono">
-                ({allPhotos.length})
-              </span>
-            </button>
-          )}
+      {/* AI Tools Selection Accordion (7 Categories) */}
+      <div className="flex flex-col gap-3">
+        {/* Search and Expand Controls */}
+        <div className="flex flex-col gap-2">
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#8c909f]" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search all 29 tools..."
+              className="w-full bg-[#1b1f2b]/80 border border-white/10 rounded-xl pl-8 pr-3 py-2 text-xs text-white placeholder:text-[#8c909f] focus:outline-none focus:border-[#3b82f6]/60 transition-colors"
+            />
+          </div>
 
-          {/* Quick comparison pills */}
-          {editedPhoto && !isProcessing && (
-            <div className="pointer-events-auto flex items-center gap-2 bg-[#1c1b1b]/80 backdrop-blur-xl border border-white/10 px-3 py-1.5 rounded-full shadow-2xl">
+          <div className="flex items-center justify-between text-[11px] text-[#8c909f] px-1">
+            <span>7 Sections ({ALL_TOOLS.length} Presets)</span>
+            <div className="flex items-center gap-2">
               <button
-                onMouseDown={() => setPeekOriginal(true)}
-                onMouseUp={() => setPeekOriginal(false)}
-                onTouchStart={() => setPeekOriginal(true)}
-                onTouchEnd={() => setPeekOriginal(false)}
-                className="flex items-center gap-1.5 text-xs font-medium text-[#c2c6d6] hover:text-white pressable"
-                title="Hold to view original"
+                type="button"
+                onClick={expandAll}
+                className="hover:text-white transition-colors cursor-pointer"
               >
-                <Eye className="w-3.5 h-3.5 text-[#adc6ff]" />
-                <span>{peekOriginal ? 'Original' : 'Hold to Peek'}</span>
+                Expand All
               </button>
-
-              <div className="w-[1px] h-3.5 bg-white/20" />
-
+              <span>•</span>
               <button
-                onClick={() => setIsComparing(!isComparing)}
-                className={`flex items-center gap-1.5 text-xs font-medium pressable ${
-                  isComparing ? 'text-[#3b82f6]' : 'text-[#8c909f] hover:text-white'
-                }`}
-                title="Toggle Before/After Split"
+                type="button"
+                onClick={collapseAll}
+                className="hover:text-white transition-colors cursor-pointer"
               >
-                <Split className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Split View</span>
+                Collapse All
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Accordion Categories */}
+        <div className="flex flex-col gap-2.5">
+          {TOOL_CATEGORIES.map((category) => {
+            const isSearching = searchQuery.trim().length > 0;
+            const filteredTools = isSearching
+              ? category.tools.filter(
+                  (t) =>
+                    t.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    t.tag.toLowerCase().includes(searchQuery.toLowerCase())
+                )
+              : category.tools;
+
+            if (isSearching && filteredTools.length === 0) return null;
+
+            const isExpanded = isSearching || Boolean(expandedCategories[category.id]);
+            const CatIcon = category.icon;
+            const hasSelectedTool = category.tools.some((t) => t.id === selectedTool.id);
+
+            return (
+              <div
+                key={category.id}
+                className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+                  hasSelectedTool
+                    ? 'border-[#3b82f6]/40 bg-[#161922]'
+                    : 'border-white/10 bg-[#141720]/60 hover:border-white/20'
+                }`}
+              >
+                {/* Dropdown Header Button */}
+                <button
+                  type="button"
+                  onClick={() => toggleCategory(category.id)}
+                  className="w-full px-3.5 py-3 flex items-center justify-between text-left cursor-pointer group transition-colors"
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div
+                      className={`w-7 h-7 rounded-lg flex items-center justify-center border shrink-0 ${category.color}`}
+                    >
+                      <CatIcon className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="truncate">
+                      <span className="text-xs font-bold text-white tracking-tight group-hover:text-blue-300 transition-colors">
+                        {category.title}
+                      </span>
+                      <span className="text-[10px] text-[#8c909f] ml-2">
+                        ({filteredTools.length})
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] font-mono text-[#8c909f] bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/5">
+                      {category.badge}
+                    </span>
+                    <div
+                      className={`text-[#8c909f] transition-transform duration-200 ${
+                        isExpanded ? 'rotate-180 text-white' : 'rotate-0'
+                      }`}
+                    >
+                      <ChevronDown className="w-4 h-4" />
+                    </div>
+                  </div>
+                </button>
+
+                {/* Collapsible Dropdown Content */}
+                {isExpanded && (
+                  <div className="px-3 pb-3 pt-1 flex flex-col gap-1.5 border-t border-white/5">
+                    {filteredTools.map((tool) => {
+                      const isSelected = selectedTool.id === tool.id;
+                      const ToolIcon = tool.icon;
+
+                      return (
+                        <button
+                          key={tool.id}
+                          type="button"
+                          disabled={isProcessing}
+                          onClick={() => {
+                            setSelectedTool(tool);
+                            if (tool.id === 'bg-remove' || tool.id === 'circle-avatar') {
+                              setViewBackground('checkerboard');
+                            } else {
+                              setViewBackground('solid');
+                            }
+                          }}
+                          className={`flex items-start gap-3 p-2.5 rounded-xl text-left transition-all border cursor-pointer ${
+                            isSelected
+                              ? 'border-[#3b82f6] bg-[#3b82f6]/15 shadow-[0_0_15px_rgba(59,130,246,0.25)]'
+                              : 'border-white/5 hover:border-white/15 hover:bg-white/[0.03]'
+                          }`}
+                        >
+                          <div
+                            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border mt-0.5 ${
+                              isSelected
+                                ? 'bg-[#3b82f6] border-[#3b82f6] text-white shadow-md'
+                                : 'bg-[#1e2433] border-white/10 text-[#adc6ff]'
+                            }`}
+                          >
+                            <ToolIcon className="w-3.5 h-3.5" />
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className="text-xs font-semibold text-white truncate">
+                                {tool.label}
+                              </span>
+                              <span className="text-[9px] font-mono text-[#adc6ff] bg-[#3b82f6]/15 px-1.5 py-0.2 rounded-full border border-[#3b82f6]/20 shrink-0 ml-1">
+                                {tool.tag}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-[#8c909f] leading-snug line-clamp-2">
+                              {tool.description}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Intensity Slider */}
+      {editedPhoto && (
+        <div className="flex flex-col gap-2 pt-2 border-t border-white/10">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-[#8c909f] font-medium flex items-center gap-1.5">
+              <Sliders className="w-3.5 h-3.5" /> Effect Intensity
+            </span>
+            <span className="font-mono text-white">{intensity[0]}%</span>
+          </div>
+          <Slider
+            value={intensity}
+            onValueChange={(val) =>
+              setIntensity(Array.isArray(val) ? [...val] : [Number(val)])
+            }
+            max={100}
+            min={10}
+            step={5}
+            className="py-1"
+          />
+        </div>
+      )}
+
+      {/* Canvas View Switcher (Solid vs Checkerboard) */}
+      <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs">
+        <span className="text-[#8c909f]">Canvas Backdrop</span>
+        <div className="flex items-center gap-1 bg-[#1a1a1a] p-0.5 rounded-lg border border-white/10">
+          <button
+            type="button"
+            onClick={() => setViewBackground('solid')}
+            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+              viewBackground === 'solid'
+                ? 'bg-white/15 text-white'
+                : 'text-[#8c909f] hover:text-white'
+            }`}
+          >
+            Solid
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewBackground('checkerboard')}
+            className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+              viewBackground === 'checkerboard'
+                ? 'bg-white/15 text-white'
+                : 'text-[#8c909f] hover:text-white'
+            }`}
+          >
+            Grid
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  const renderActionButtons = (isInsideDrawer: boolean = false) => (
+    <div className="flex flex-col gap-2.5">
+      {editedPhoto ? (
+        <>
+          {savedSuccess && (
+            <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>Saved to your vault as a linked version!</span>
+            </div>
           )}
+
+          <div className="flex gap-2">
+            <a
+              href={`/api/images/${editedPhoto.id}/download`}
+              download={`${selectedPhoto?.name}-ai-${editedPhoto.transform}.webp`}
+              className="flex-1"
+            >
+              <Button className="w-full btn-vault py-3.5 sm:py-5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(59,130,246,0.3)]">
+                <Download className="w-4 h-4" />
+                <span>Download Result</span>
+              </Button>
+            </a>
+
+            <Button
+              variant="outline"
+              onClick={handleReset}
+              className="glass-button rounded-xl text-xs px-3 text-[#c2c6d6] hover:text-white border-white/15"
+              title="Revert edit"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </Button>
+          </div>
+
+          <Link href="/timeline" className="w-full">
+            <Button
+              variant="outline"
+              className="w-full glass-button rounded-xl text-xs py-2 text-[#adc6ff] border-white/15"
+            >
+              <span>Open in Timeline</span>
+            </Button>
+          </Link>
+        </>
+      ) : (
+        <Button
+          onClick={() => {
+            if (isInsideDrawer) {
+              setIsDrawerOpen(false);
+            }
+            handleApplyTransform();
+          }}
+          disabled={isProcessing || !selectedPhoto}
+          className="w-full py-4 sm:py-5 md:py-6 btn-vault rounded-xl text-sm font-semibold flex items-center justify-center gap-2 pressable shadow-[0_0_20px_rgba(59,130,246,0.3)] disabled:opacity-50"
+        >
+          {isProcessing ? (
+            <>
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>Processing Neural Edit...</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-4 h-4" />
+              <span>Apply {selectedTool.label}</span>
+            </>
+          )}
+        </Button>
+      )}
+    </div>
+  );
+
+  return (
+    <div className="bg-[#0a0a0a] text-[#e5e2e1] h-[100dvh] overflow-hidden antialiased font-[family-name:var(--font-inter)] selection:bg-[#4d8eff]/30 selection:text-white flex flex-col md:flex-row relative">
+      {/* ── Main Canvas Viewport (Full Screen on Mobile & Desktop) ── */}
+      <main className="w-full h-full flex-1 min-w-0 min-h-0 relative flex items-center justify-center p-2 sm:p-4 md:p-8 lg:p-12 bg-[#090909] z-10">
+        {/* Top Floating Control Bar */}
+        <div className="absolute top-2 inset-x-2 sm:top-4 sm:inset-x-4 md:top-6 md:inset-x-8 z-30 flex items-center justify-between pointer-events-none">
+          {/* Left: Back button & Switch Photo */}
+          <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
+            <Link
+              href="/timeline"
+              className="flex items-center gap-1.5 sm:gap-2 glass-button px-3 py-1.5 sm:px-4 sm:py-2 rounded-full text-[11px] sm:text-xs font-semibold text-[#e5e2e1] hover:text-white transition-all hover:scale-105 shadow-xl pressable border-white/15"
+            >
+              <ArrowLeft className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+              <span>Timeline</span>
+            </Link>
+
+            {allPhotos.length > 1 && (
+              <button
+                onClick={() => setIsPhotoPickerOpen(true)}
+                className="flex items-center gap-1.5 sm:gap-2 glass-button px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-medium text-[#adc6ff] hover:text-white border-white/15 pressable shadow-xl"
+              >
+                <Images className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Switch Photo</span>
+                <span className="text-[10px] text-[#8c909f] font-mono">
+                  ({allPhotos.length})
+                </span>
+              </button>
+            )}
+          </div>
+
+          {/* Right: Quick comparison pills & Drawer trigger button */}
+          <div className="flex items-center gap-1.5 sm:gap-2 pointer-events-auto">
+            {editedPhoto && !isProcessing && (
+              <div className="flex items-center gap-2 bg-[#1c1b1b]/80 backdrop-blur-xl border border-white/10 px-3 py-1.5 rounded-full shadow-2xl">
+                <button
+                  onMouseDown={() => setPeekOriginal(true)}
+                  onMouseUp={() => setPeekOriginal(false)}
+                  onTouchStart={() => setPeekOriginal(true)}
+                  onTouchEnd={() => setPeekOriginal(false)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-[#c2c6d6] hover:text-white pressable"
+                  title="Hold to view original"
+                >
+                  <Eye className="w-3.5 h-3.5 text-[#adc6ff]" />
+                  <span>{peekOriginal ? 'Original' : 'Hold to Peek'}</span>
+                </button>
+
+                <div className="w-[1px] h-3.5 bg-white/20" />
+
+                <button
+                  onClick={() => setIsComparing(!isComparing)}
+                  className={`flex items-center gap-1.5 text-xs font-medium pressable ${
+                    isComparing ? 'text-[#3b82f6]' : 'text-[#8c909f] hover:text-white'
+                  }`}
+                  title="Toggle Before/After Split"
+                >
+                  <Split className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Split View</span>
+                </button>
+              </div>
+            )}
+
+            {/* Quick button to open Features Drawer */}
+            <button
+              onClick={() => setIsDrawerOpen(true)}
+              className="flex items-center gap-1.5 glass-button px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-full text-[11px] sm:text-xs font-semibold text-[#adc6ff] hover:text-white border-white/15 pressable shadow-xl cursor-pointer"
+              title="Open AI Features Drawer"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-[#adc6ff]" />
+              <span className="hidden xs:inline">Features</span>
+              <span className="text-[10px] text-[#8c909f] font-mono">
+                ({ALL_TOOLS.length})
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* ── Interactive Image Canvas with Split Slider ── */}
@@ -749,7 +1070,7 @@ function AIEditorInner() {
         ) : (
           <div
             ref={containerRef}
-            className={`relative w-full h-full max-w-5xl max-h-[820px] min-h-[360px] md:min-h-[500px] rounded-2xl glass-panel p-2 md:p-3 shadow-2xl flex items-center justify-center overflow-hidden border border-white/10 select-none ${
+            className={`relative w-full h-full max-w-5xl max-h-[820px] min-h-0 md:min-h-[480px] rounded-2xl glass-panel p-1.5 sm:p-2 md:p-3 shadow-2xl flex items-center justify-center overflow-hidden border border-white/10 select-none ${
               viewBackground === 'checkerboard'
                 ? 'bg-[linear-gradient(45deg,#1f2937_25%,transparent_25%),linear-gradient(-45deg,#1f2937_25%,transparent_25%),linear-gradient(45deg,transparent_75%,#1f2937_75%),linear-gradient(-45deg,transparent_75%,#1f2937_75%)] bg-[size:20px_20px] bg-[#111827]'
                 : 'bg-[#101010]'
@@ -838,8 +1159,8 @@ function AIEditorInner() {
             )}
 
             {/* Photo Specs Badge */}
-            <div className="absolute bottom-4 left-4 z-20 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-[10px] text-[#c2c6d6] flex items-center gap-2">
-              <span className="font-semibold text-white">{selectedPhoto.name}</span>
+            <div className="absolute bottom-20 md:bottom-4 left-3 md:left-4 z-20 bg-black/60 backdrop-blur-md px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-xl border border-white/10 text-[10px] text-[#c2c6d6] flex items-center gap-2 max-w-[calc(100%-1rem)] sm:max-w-none">
+              <span className="font-semibold text-white truncate max-w-[120px] sm:max-w-none">{selectedPhoto.name}</span>
               {selectedPhoto.width && selectedPhoto.height && (
                 <>
                   <span className="text-[#525764]">•</span>
@@ -851,11 +1172,86 @@ function AIEditorInner() {
             </div>
           </div>
         )}
+
+        {/* Mobile Floating Drawer Trigger Bar */}
+        {selectedPhoto && (
+          <div className="absolute bottom-3 inset-x-3 z-30 flex md:hidden items-center gap-2 bg-[#121212]/92 backdrop-blur-2xl border border-white/15 p-2 rounded-2xl shadow-[0_8px_32px_rgba(0,0,0,0.6)]">
+            <button
+              type="button"
+              onClick={() => setIsDrawerOpen(true)}
+              className="flex-1 flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] active:scale-[0.98] border border-white/10 text-left transition-all min-w-0"
+            >
+              <div className="w-8 h-8 rounded-lg bg-[#3b82f6]/25 border border-[#3b82f6]/40 flex items-center justify-center shrink-0">
+                {(() => {
+                  const CurrentIcon = selectedTool.icon;
+                  return <CurrentIcon className="w-4 h-4 text-[#adc6ff]" />;
+                })()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-white truncate">
+                    {selectedTool.label}
+                  </span>
+                  <span className="text-[9px] font-mono text-[#adc6ff] bg-[#3b82f6]/20 px-1.5 py-0.2 rounded-full border border-[#3b82f6]/30 shrink-0">
+                    {selectedTool.tag}
+                  </span>
+                </div>
+                <span className="text-[10px] text-[#8c909f] flex items-center gap-1">
+                  <span>29 Features</span>
+                  <span>•</span>
+                  <span className="text-[#3b82f6] font-medium flex items-center">
+                    Browse All <ChevronDown className="w-3 h-3 ml-0.5" />
+                  </span>
+                </span>
+              </div>
+            </button>
+
+            {editedPhoto ? (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <a
+                  href={`/api/images/${editedPhoto.id}/download`}
+                  download={`${selectedPhoto?.name}-ai-${editedPhoto.transform}.webp`}
+                >
+                  <Button className="btn-vault py-2.5 px-3.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-lg">
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Save</span>
+                  </Button>
+                </a>
+                <Button
+                  variant="outline"
+                  onClick={handleReset}
+                  className="glass-button p-2.5 rounded-xl text-xs text-[#c2c6d6] hover:text-white border-white/15"
+                  title="Revert edit"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <Button
+                onClick={handleApplyTransform}
+                disabled={isProcessing || !selectedPhoto}
+                className="btn-vault py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center gap-1.5 shrink-0 shadow-lg disabled:opacity-50 pressable"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Applying...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Apply</span>
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+        )}
       </main>
 
-      {/* ── AI Tools Sidebar Controls ── */}
-      <aside className="w-full md:w-96 lg:w-[420px] bg-[#121212]/95 backdrop-blur-2xl border-t md:border-t-0 md:border-l border-white/10 p-5 md:p-6 flex flex-col justify-between z-40 overflow-y-auto">
-        <div className="flex flex-col gap-6">
+      {/* ── AI Tools Desktop Sidebar (Hidden on Mobile) ── */}
+      <aside className="hidden md:flex md:w-96 lg:w-[420px] md:h-full bg-[#121212]/95 backdrop-blur-2xl border-l border-white/10 p-5 md:p-6 flex flex-col justify-between z-20 overflow-y-auto min-h-0">
+        <div className="flex flex-col gap-6 pb-4">
           {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -872,290 +1268,60 @@ function AIEditorInner() {
             </span>
           </div>
 
-          {/* Error Banner */}
-          {errorMessage && (
-            <div className="p-3 rounded-xl bg-red-950/30 border border-red-500/30 text-xs text-red-300 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
-
-          {/* AI Tools Selection Accordion (7 Categories) */}
-          <div className="flex flex-col gap-3">
-            {/* Search and Expand Controls */}
-            <div className="flex flex-col gap-2">
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#8c909f]" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search all 29 tools..."
-                  className="w-full bg-[#1b1f2b]/80 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-[#8c909f] focus:outline-none focus:border-[#3b82f6]/60 transition-colors"
-                />
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-[#8c909f] px-1">
-                <span>7 Sections ({ALL_TOOLS.length} Presets)</span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={expandAll}
-                    className="hover:text-white transition-colors cursor-pointer"
-                  >
-                    Expand All
-                  </button>
-                  <span>•</span>
-                  <button
-                    type="button"
-                    onClick={collapseAll}
-                    className="hover:text-white transition-colors cursor-pointer"
-                  >
-                    Collapse All
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Accordion Categories */}
-            <div className="flex flex-col gap-2.5">
-              {TOOL_CATEGORIES.map((category) => {
-                const isSearching = searchQuery.trim().length > 0;
-                const filteredTools = isSearching
-                  ? category.tools.filter(
-                      (t) =>
-                        t.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        t.tag.toLowerCase().includes(searchQuery.toLowerCase())
-                    )
-                  : category.tools;
-
-                if (isSearching && filteredTools.length === 0) return null;
-
-                const isExpanded = isSearching || Boolean(expandedCategories[category.id]);
-                const CatIcon = category.icon;
-                const hasSelectedTool = category.tools.some((t) => t.id === selectedTool.id);
-
-                return (
-                  <div
-                    key={category.id}
-                    className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
-                      hasSelectedTool
-                        ? 'border-[#3b82f6]/40 bg-[#161922]'
-                        : 'border-white/10 bg-[#141720]/60 hover:border-white/20'
-                    }`}
-                  >
-                    {/* Dropdown Header Button */}
-                    <button
-                      type="button"
-                      onClick={() => toggleCategory(category.id)}
-                      className="w-full px-3.5 py-3 flex items-center justify-between text-left cursor-pointer group transition-colors"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div
-                          className={`w-7 h-7 rounded-lg flex items-center justify-center border shrink-0 ${category.color}`}
-                        >
-                          <CatIcon className="w-3.5 h-3.5" />
-                        </div>
-                        <div className="truncate">
-                          <span className="text-xs font-bold text-white tracking-tight group-hover:text-blue-300 transition-colors">
-                            {category.title}
-                          </span>
-                          <span className="text-[10px] text-[#8c909f] ml-2">
-                            ({filteredTools.length})
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-[10px] font-mono text-[#8c909f] bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/5">
-                          {category.badge}
-                        </span>
-                        <div
-                          className={`text-[#8c909f] transition-transform duration-200 ${
-                            isExpanded ? 'rotate-180 text-white' : 'rotate-0'
-                          }`}
-                        >
-                          <ChevronDown className="w-4 h-4" />
-                        </div>
-                      </div>
-                    </button>
-
-                    {/* Collapsible Dropdown Content */}
-                    {isExpanded && (
-                      <div className="px-3 pb-3 pt-1 flex flex-col gap-1.5 border-t border-white/5">
-                        {filteredTools.map((tool) => {
-                          const isSelected = selectedTool.id === tool.id;
-                          const ToolIcon = tool.icon;
-
-                          return (
-                            <button
-                              key={tool.id}
-                              type="button"
-                              disabled={isProcessing}
-                              onClick={() => {
-                                setSelectedTool(tool);
-                                if (tool.id === 'bg-remove' || tool.id === 'circle-avatar') {
-                                  setViewBackground('checkerboard');
-                                } else {
-                                  setViewBackground('solid');
-                                }
-                              }}
-                              className={`flex items-start gap-3 p-2.5 rounded-xl text-left transition-all border cursor-pointer ${
-                                isSelected
-                                  ? 'border-[#3b82f6] bg-[#3b82f6]/15 shadow-[0_0_15px_rgba(59,130,246,0.25)]'
-                                  : 'border-white/5 hover:border-white/15 hover:bg-white/[0.03]'
-                              }`}
-                            >
-                              <div
-                                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border mt-0.5 ${
-                                  isSelected
-                                    ? 'bg-[#3b82f6] border-[#3b82f6] text-white shadow-md'
-                                    : 'bg-[#1e2433] border-white/10 text-[#adc6ff]'
-                                }`}
-                              >
-                                <ToolIcon className="w-3.5 h-3.5" />
-                              </div>
-
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between mb-0.5">
-                                  <span className="text-xs font-semibold text-white truncate">
-                                    {tool.label}
-                                  </span>
-                                  <span className="text-[9px] font-mono text-[#adc6ff] bg-[#3b82f6]/15 px-1.5 py-0.2 rounded-full border border-[#3b82f6]/20 shrink-0 ml-1">
-                                    {tool.tag}
-                                  </span>
-                                </div>
-                                <p className="text-[11px] text-[#8c909f] leading-snug line-clamp-2">
-                                  {tool.description}
-                                </p>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Intensity Slider */}
-          {editedPhoto && (
-            <div className="flex flex-col gap-2 pt-2 border-t border-white/10">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-[#8c909f] font-medium flex items-center gap-1.5">
-                  <Sliders className="w-3.5 h-3.5" /> Effect Intensity
-                </span>
-                <span className="font-mono text-white">{intensity[0]}%</span>
-              </div>
-              <Slider
-                value={intensity}
-                onValueChange={(val) =>
-                  setIntensity(Array.isArray(val) ? [...val] : [Number(val)])
-                }
-                max={100}
-                min={10}
-                step={5}
-                className="py-1"
-              />
-            </div>
-          )}
-
-          {/* Canvas View Switcher (Solid vs Checkerboard) */}
-          <div className="flex items-center justify-between pt-2 border-t border-white/10 text-xs">
-            <span className="text-[#8c909f]">Canvas Backdrop</span>
-            <div className="flex items-center gap-1 bg-[#1a1a1a] p-0.5 rounded-lg border border-white/10">
-              <button
-                type="button"
-                onClick={() => setViewBackground('solid')}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
-                  viewBackground === 'solid'
-                    ? 'bg-white/15 text-white'
-                    : 'text-[#8c909f] hover:text-white'
-                }`}
-              >
-                Solid
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewBackground('checkerboard')}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
-                  viewBackground === 'checkerboard'
-                    ? 'bg-white/15 text-white'
-                    : 'text-[#8c909f] hover:text-white'
-                }`}
-              >
-                Grid
-              </button>
-            </div>
-          </div>
+          {renderToolSections()}
         </div>
 
-        {/* ── Bottom Actions ── */}
-        <div className="flex flex-col gap-2.5 pt-5 mt-4 border-t border-white/10">
-          {editedPhoto ? (
-            <>
-              {savedSuccess && (
-                <div className="p-2.5 rounded-xl bg-emerald-950/30 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>Saved to your vault as a linked version!</span>
-                </div>
-              )}
-
-              <div className="flex gap-2">
-                <a
-                  href={`/api/images/${editedPhoto.id}/download`}
-                  download={`${selectedPhoto?.name}-ai-${editedPhoto.transform}.webp`}
-                  className="flex-1"
-                >
-                  <Button className="w-full btn-vault py-5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(59,130,246,0.3)]">
-                    <Download className="w-4 h-4" />
-                    <span>Download Result</span>
-                  </Button>
-                </a>
-
-                <Button
-                  variant="outline"
-                  onClick={handleReset}
-                  className="glass-button rounded-xl text-xs px-3 text-[#c2c6d6] hover:text-white border-white/15"
-                  title="Revert edit"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </Button>
-              </div>
-
-              <Link href="/timeline" className="w-full">
-                <Button
-                  variant="outline"
-                  className="w-full glass-button rounded-xl text-xs py-2 text-[#adc6ff] border-white/15"
-                >
-                  <span>Open in Timeline</span>
-                </Button>
-              </Link>
-            </>
-          ) : (
-            <Button
-              onClick={handleApplyTransform}
-              disabled={isProcessing || !selectedPhoto}
-              className="w-full py-6 btn-vault rounded-xl text-sm font-semibold flex items-center justify-center gap-2 pressable shadow-[0_0_20px_rgba(59,130,246,0.3)] disabled:opacity-50"
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Processing Neural Edit...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  <span>Apply {selectedTool.label}</span>
-                </>
-              )}
-            </Button>
-          )}
+        {/* Bottom Actions */}
+        <div className="sticky bottom-0 -mx-5 -mb-5 md:-mx-6 md:-mb-6 p-4 md:p-6 bg-[#121212]/95 backdrop-blur-xl border-t border-white/10 mt-auto z-30 shadow-2xl">
+          {renderActionButtons(false)}
         </div>
       </aside>
+
+      {/* ── Shadcn AI Features Drawer (Mobile & Desktop) ── */}
+      <Drawer open={isDrawerOpen} onOpenChange={setIsDrawerOpen} showSwipeHandle>
+        <DrawerContent className="bg-[#121212]/98 backdrop-blur-2xl border-t border-white/15 text-[#e5e2e1] max-h-[88dvh] flex flex-col rounded-t-3xl shadow-2xl">
+          {/* Drawer Header */}
+          <DrawerHeader className="px-5 pt-3 pb-3 border-b border-white/10 text-left shrink-0">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-[#3b82f6]/20 border border-[#3b82f6]/30 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-[#adc6ff]" />
+                </div>
+                <div>
+                  <DrawerTitle className="font-[family-name:var(--font-manrope)] text-base font-bold text-white tracking-tight">
+                    AI Photo Studio
+                  </DrawerTitle>
+                  <p className="text-[11px] text-[#8c909f]">
+                    29 Neural Tools in 7 Categories
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-400 bg-emerald-950/40 border border-emerald-500/20 px-2.5 py-0.5 rounded-full">
+                  7 Sections
+                </span>
+                <DrawerClose className="glass-button w-7 h-7 rounded-full flex items-center justify-center text-[#8c909f] hover:text-white border-white/10 cursor-pointer">
+                  <X className="w-3.5 h-3.5" />
+                </DrawerClose>
+              </div>
+            </div>
+            <DrawerDescription className="sr-only">
+              Select from 29 AI enhancement features across 7 categories to apply to your photo
+            </DrawerDescription>
+          </DrawerHeader>
+
+          {/* Drawer Scrollable Content */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 flex flex-col gap-5 min-h-0">
+            {renderToolSections()}
+          </div>
+
+          {/* Drawer Footer with Bottom Actions */}
+          <DrawerFooter className="p-4 sm:p-5 border-t border-white/10 shrink-0 bg-[#121212]/95 backdrop-blur-xl">
+            {renderActionButtons(true)}
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
 
       {/* ── Switch Photo Dialog ── */}
       <Dialog open={isPhotoPickerOpen} onOpenChange={setIsPhotoPickerOpen}>

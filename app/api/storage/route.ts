@@ -34,9 +34,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to fetch storage stats.' }, { status: 500 });
   }
 
+  // Fetch all videos for this user
+  const { data: videos } = await supabase
+    .from('videos')
+    .select('id, status')
+    .eq('user_id', user.id);
+
   let totalActiveBytes = 0;
   let totalOriginalBytes = 0;
   let activeImageCount = 0;
+  let activeVideoCount = 0;
   let trashCount = 0;
 
   (images || []).forEach((img) => {
@@ -47,6 +54,14 @@ export async function GET(request: NextRequest) {
       activeImageCount++;
       totalActiveBytes += img.compressed_size_bytes || 0;
       totalOriginalBytes += img.original_size_bytes || img.compressed_size_bytes || 0;
+    }
+  });
+
+  (videos || []).forEach((v) => {
+    if (v.status === 'trash') {
+      trashCount++;
+    } else {
+      activeVideoCount++;
     }
   });
 
@@ -65,6 +80,7 @@ export async function GET(request: NextRequest) {
       formattedLimit: '10 GB',
       formattedRemaining: formatBytes(remainingBytes),
       imageCount: activeImageCount,
+      videoCount: activeVideoCount,
       trashCount,
       totalOriginalBytes,
       savedBytes,

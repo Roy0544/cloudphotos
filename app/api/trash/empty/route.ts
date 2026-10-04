@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { deleteFromR2, getThumbnailKey } from '@/lib/r2';
+import { deleteBunnyVideo } from '@/lib/bunny';
 
 export const runtime = 'nodejs';
 
@@ -15,7 +16,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized.' }, { status: 401 });
   }
 
-  // Fetch all trashed photos and variants
+  // 1. Fetch and purge all trashed photos and variants from R2 and Supabase
   const { data: trashed, error: dbError } = await supabase
     .from('images')
     .select('id, r2_key')
@@ -38,16 +39,33 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Delete all rows from Supabase
-  const { error: deleteError } = await supabase
+  // Delete image rows from Supabase
+  await supabase
     .from('images')
     .delete()
     .like('ai_transform_type', 'trash%');
 
-  if (deleteError) {
-    console.error('[trash/empty] DB delete error:', deleteError);
-    return NextResponse.json({ error: 'Failed to purge trashed photos from database.' }, { status: 500 });
+  // 2. Fetch and purge all trashed videos from Bunny Stream and Supabase
+  const { data: trashedVideos } = await supabase
+    .from('videos')
+    .select('id, stream_video_id')
+    .eq('user_id', user.id)
+    .like('error_message', 'trash%');
+
+  for (const v of trashedVideos || []) {
+    if (v.stream_video_id) {
+      await deleteBunnyVideo(v.stream_video_id).catch((e) =>
+        console.warn('[trash/empty] failed to delete Bunny video:', v.stream_video_id, e)
+      );
+    }
   }
 
-  return NextResponse.json({ success: true, purgedCount: trashed?.length || 0 });
+  await supabase
+    .from('videos')
+    .delete()
+    .eq('user_id', user.id)
+    .like('error_message', 'trash%');
+
+  const totalPurged = (trashed?.length || 0) + (trashedVideos?.length || 0);
+  return NextResponse.json({ success: true, purgedCount: totalPurged });
 }

@@ -12,6 +12,8 @@ import {
   CheckCircle2,
   Images,
   ArrowLeft,
+  Film,
+  Play,
 } from 'lucide-react';
 import { VaultSidebar } from '@/components/vault-sidebar';
 import { VaultMobileNav } from '@/components/vault-mobile-nav';
@@ -31,6 +33,22 @@ interface TrashedItem {
   viewUrl: string;
   createdAt: string;
   aiTransformType?: string;
+  mediaType?: 'photo' | 'video';
+  streamVideoId?: string;
+  durationSeconds?: number;
+  embedUrl?: string;
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return '00:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  const hrs = Math.floor(mins / 60);
+  if (hrs > 0) {
+    const remainMins = mins % 60;
+    return `${hrs}:${remainMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 export default function TrashPage() {
@@ -40,7 +58,7 @@ export default function TrashPage() {
   const [activePhoto, setActivePhoto] = useState<TrashedItem | null>(null);
   const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
   const [showEmptyConfirm, setShowEmptyConfirm] = useState(false);
-  const [permanentDeleteId, setPermanentDeleteId] = useState<string | null>(null);
+  const [permanentDeleteItem, setPermanentDeleteItem] = useState<TrashedItem | null>(null);
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const fetchTrash = useCallback(async () => {
@@ -64,37 +82,43 @@ export default function TrashPage() {
   }, [fetchTrash]);
 
   // Restore item
-  const handleRestore = async (id: string) => {
-    setActionLoadingId(id);
+  const handleRestore = async (item: TrashedItem) => {
+    setActionLoadingId(item.id);
     try {
-      const res = await fetch(`/api/images/${id}/restore`, { method: 'POST' });
+      const endpoint =
+        item.mediaType === 'video'
+          ? `/api/videos/${item.id}/restore`
+          : `/api/images/${item.id}/restore`;
+      const res = await fetch(endpoint, { method: 'POST' });
       if (!res.ok) throw new Error('Failed to restore');
-      setTrashedItems((prev) => prev.filter((item) => item.id !== id));
-      if (activePhoto?.id === id) setActivePhoto(null);
+      setTrashedItems((prev) => prev.filter((i) => i.id !== item.id));
+      if (activePhoto?.id === item.id) setActivePhoto(null);
       window.dispatchEvent(new Event('vault-storage-updated'));
     } catch (err: any) {
       console.error('Restore error:', err);
-      alert('Failed to restore photo: ' + err.message);
+      alert(`Failed to restore ${item.mediaType === 'video' ? 'video' : 'photo'}: ` + err.message);
     } finally {
       setActionLoadingId(null);
     }
   };
 
   // Permanently delete item
-  const handlePermanentDelete = async (id: string) => {
-    setActionLoadingId(id);
+  const handlePermanentDelete = async (item: TrashedItem) => {
+    setActionLoadingId(item.id);
     try {
-      const res = await fetch(`/api/images/${id}?permanent=true`, {
-        method: 'DELETE',
-      });
+      const endpoint =
+        item.mediaType === 'video'
+          ? `/api/videos/${item.id}?permanent=true`
+          : `/api/images/${item.id}?permanent=true`;
+      const res = await fetch(endpoint, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete permanently');
-      setTrashedItems((prev) => prev.filter((item) => item.id !== id));
-      if (activePhoto?.id === id) setActivePhoto(null);
-      setPermanentDeleteId(null);
+      setTrashedItems((prev) => prev.filter((i) => i.id !== item.id));
+      if (activePhoto?.id === item.id) setActivePhoto(null);
+      setPermanentDeleteItem(null);
       window.dispatchEvent(new Event('vault-storage-updated'));
     } catch (err: any) {
       console.error('Permanent delete error:', err);
-      alert('Failed to permanently delete photo: ' + err.message);
+      alert(`Failed to permanently delete ${item.mediaType === 'video' ? 'video' : 'photo'}: ` + err.message);
     } finally {
       setActionLoadingId(null);
     }
@@ -144,7 +168,7 @@ export default function TrashPage() {
                 </span>
               </div>
               <p className="text-[11px] text-[#8c909f] hidden sm:block">
-                Items here can be restored or purged permanently from Cloudflare R2
+                Items here can be restored or purged permanently from Cloud Vault & Bunny Stream
               </p>
             </div>
           </div>
@@ -187,7 +211,7 @@ export default function TrashPage() {
                 Trash is Empty
               </h3>
               <p className="text-xs text-[#8c909f] mt-1.5 leading-relaxed">
-                Photos you delete will appear here before they are permanently purged.
+                Photos and videos you delete will appear here before they are permanently purged.
               </p>
               <Link href="/timeline" className="mt-5">
                 <Button className="btn-vault rounded-xl text-xs px-5 py-2.5 pressable shadow-[0_0_20px_rgba(59,130,246,0.25)]">
@@ -196,14 +220,14 @@ export default function TrashPage() {
               </Link>
             </div>
           ) : (
-            /* Trashed Photos Grid */
+            /* Trashed Media Grid */
             <div className="flex flex-col gap-6">
               {/* Notice Banner */}
               <div className="p-4 rounded-xl bg-amber-950/20 border border-amber-500/20 text-xs text-amber-200/90 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5">
                   <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
                   <span>
-                    Items in trash are hidden from your timeline. Permanently deleting items will immediately free up space in your 10 GB vault.
+                    Items in trash are hidden from your timeline. Permanently deleting items will immediately free up space in your vault and Bunny Stream CDN.
                   </span>
                 </div>
               </div>
@@ -213,13 +237,14 @@ export default function TrashPage() {
                   const compKB = Math.round((item.compressedSizeBytes || 0) / 1024);
                   const isActioning = actionLoadingId === item.id;
                   const imgSrc = item.signedUrl || item.viewUrl;
+                  const isVideo = item.mediaType === 'video';
 
                   return (
                     <div
                       key={item.id}
                       className="glass-card rounded-xl overflow-hidden border border-white/10 flex flex-col justify-between group hover:border-white/20 transition-all select-none"
                     >
-                      {/* Photo Thumbnail */}
+                      {/* Media Thumbnail */}
                       <div
                         onClick={() => setActivePhoto(item)}
                         className="aspect-square relative cursor-pointer overflow-hidden bg-black/40"
@@ -228,17 +253,28 @@ export default function TrashPage() {
                           src={imgSrc}
                           alt={item.originalFilename}
                           onError={(e) => {
-                            if (e.currentTarget.src !== window.location.origin + item.viewUrl) {
+                            if (!isVideo && e.currentTarget.src !== window.location.origin + item.viewUrl) {
                               e.currentTarget.src = item.viewUrl;
                             }
                           }}
                           className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105 opacity-80 group-hover:opacity-100"
                         />
+
+                        {/* Video Duration Badge */}
+                        {isVideo && (
+                          <div className="absolute top-2 left-2 flex items-center gap-1 bg-black/70 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-md text-[10px] font-mono text-white font-medium">
+                            <Film className="w-2.5 h-2.5 text-[#adc6ff]" />
+                            <span>{formatDuration(item.durationSeconds || 0)}</span>
+                          </div>
+                        )}
+
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-end">
                           <p className="text-[10px] text-white font-medium truncate">
                             {item.originalFilename}
                           </p>
-                          <p className="text-[9px] text-[#8c909f] font-mono">{compKB} KB</p>
+                          <p className="text-[9px] text-[#8c909f] font-mono">
+                            {isVideo ? 'Bunny Stream' : `${compKB} KB`}
+                          </p>
                         </div>
                       </div>
 
@@ -248,7 +284,7 @@ export default function TrashPage() {
                           size="sm"
                           variant="ghost"
                           disabled={isActioning}
-                          onClick={() => handleRestore(item.id)}
+                          onClick={() => handleRestore(item)}
                           className="flex-1 text-[11px] h-7 px-2 text-[#adc6ff] hover:text-white hover:bg-white/10 rounded-lg flex items-center justify-center gap-1"
                           title="Restore to Timeline"
                         >
@@ -260,7 +296,7 @@ export default function TrashPage() {
                           size="sm"
                           variant="ghost"
                           disabled={isActioning}
-                          onClick={() => setPermanentDeleteId(item.id)}
+                          onClick={() => setPermanentDeleteItem(item)}
                           className="text-[11px] h-7 px-2 text-[#8c909f] hover:text-red-400 hover:bg-red-950/20 rounded-lg"
                           title="Delete Permanently"
                         >
@@ -286,7 +322,7 @@ export default function TrashPage() {
             </DialogTitle>
           </DialogHeader>
           <p className="text-xs text-[#8c909f] mt-1 leading-relaxed">
-            This will permanently delete all {trashedItems.length} photos and their storage files from Cloudflare R2. This action cannot be undone.
+            This will permanently delete all {trashedItems.length} photos and videos and their storage files from Cloud Vault and Bunny Stream. This action cannot be undone.
           </p>
           <div className="flex items-center justify-end gap-2.5 mt-5">
             <Button
@@ -305,7 +341,7 @@ export default function TrashPage() {
               {isEmptyingTrash ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Purging R2...</span>
+                  <span>Purging Vault & Bunny...</span>
                 </>
               ) : (
                 <span>Empty Trash</span>
@@ -315,28 +351,32 @@ export default function TrashPage() {
         </DialogContent>
       </Dialog>
 
-      {/* ── Single Photo Permanent Delete Modal ── */}
-      <Dialog open={!!permanentDeleteId} onOpenChange={(open) => !open && setPermanentDeleteId(null)}>
+      {/* ── Single Item Permanent Delete Modal ── */}
+      <Dialog open={!!permanentDeleteItem} onOpenChange={(open) => !open && setPermanentDeleteItem(null)}>
         <DialogContent className="max-w-md bg-[#141414] border-white/10 text-[#e5e2e1] p-6 rounded-2xl">
           <DialogHeader>
             <DialogTitle className="text-base font-bold text-white flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-red-400" />
-              <span>Permanently Delete Photo?</span>
+              <span>
+                Permanently Delete {permanentDeleteItem?.mediaType === 'video' ? 'Video' : 'Photo'}?
+              </span>
             </DialogTitle>
           </DialogHeader>
           <p className="text-xs text-[#8c909f] mt-1 leading-relaxed">
-            This photo will be erased from Cloudflare R2 storage permanently and cannot be recovered.
+            {permanentDeleteItem?.mediaType === 'video'
+              ? 'This video will be permanently erased from Bunny.net Stream CDN and cannot be recovered.'
+              : 'This photo will be erased from Cloudflare R2 storage permanently and cannot be recovered.'}
           </p>
           <div className="flex items-center justify-end gap-2.5 mt-5">
             <Button
               variant="outline"
-              onClick={() => setPermanentDeleteId(null)}
+              onClick={() => setPermanentDeleteItem(null)}
               className="glass-button text-xs rounded-xl border-white/15"
             >
               Cancel
             </Button>
             <Button
-              onClick={() => permanentDeleteId && handlePermanentDelete(permanentDeleteId)}
+              onClick={() => permanentDeleteItem && handlePermanentDelete(permanentDeleteItem)}
               className="bg-red-600 hover:bg-red-700 text-white text-xs rounded-xl font-semibold px-4"
             >
               Delete Permanently

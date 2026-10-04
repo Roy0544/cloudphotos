@@ -26,10 +26,13 @@ import {
   Upload,
   FolderPlus,
   Check,
+  Film,
+  Play,
 } from 'lucide-react';
 import { VaultSidebar } from '@/components/vault-sidebar';
 import { VaultMobileNav } from '@/components/vault-mobile-nav';
 import { Button } from '@/components/ui/button';
+import { VideoPlayerModal, VideoItem } from '@/components/video-player-modal';
 import {
   Dialog,
   DialogContent,
@@ -61,6 +64,24 @@ interface FavoritePhoto {
   width?: number;
   height?: number;
   rawDate: Date;
+  mediaType?: 'photo' | 'video';
+  streamVideoId?: string;
+  previewSrc?: string;
+  embedUrl?: string;
+  durationSeconds?: number;
+  videoStatus?: string;
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return '00:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  const hrs = Math.floor(mins / 60);
+  if (hrs > 0) {
+    const remainMins = mins % 60;
+    return `${hrs}:${remainMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 export default function FavoritesPage() {
@@ -73,9 +94,12 @@ export default function FavoritesPage() {
   const [search, setSearch] = useState('');
   const [gridDensity, setGridDensity] = useState<'cozy' | 'compact'>('cozy');
   const [activePhoto, setActivePhoto] = useState<FavoritePhoto | null>(null);
+  const [activeVideo, setActiveVideo] = useState<VideoItem | null>(null);
+  const [hoveredVideoId, setHoveredVideoId] = useState<string | null>(null);
   const [unfavoritingId, setUnfavoritingId] = useState<string | null>(null);
   const [isAddToAlbumOpen, setIsAddToAlbumOpen] = useState(false);
   const [photoToTrash, setPhotoToTrash] = useState<FavoritePhoto | null>(null);
+  const [failedMediaIds, setFailedMediaIds] = useState<Set<string>>(new Set());
   const [isTrashing, setIsTrashing] = useState(false);
   const [allAlbums, setAllAlbums] = useState<Album[]>([]);
 
@@ -114,30 +138,48 @@ export default function FavoritesPage() {
     }
   };
 
+  const handleTrashVideo = async (videoId: string) => {
+    try {
+      const res = await fetch(`/api/videos/${videoId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to move video to trash');
+      setAllPhotos((prev) => prev.filter((p) => p.id !== videoId));
+      setActiveVideo(null);
+      window.dispatchEvent(new Event('vault-storage-updated'));
+    } catch (err: any) {
+      alert('Failed to trash video: ' + err.message);
+    }
+  };
+
   const handleToggleAlbum = (albumId: string) => {
     if (!activePhoto) return;
     togglePhotoInAlbum(albumId, activePhoto.id);
     setAllAlbums(getStoredAlbums());
   };
 
-  // Fetch real images from /api/images
+  // Fetch real images and videos concurrently
   const fetchPhotos = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const res = await fetch('/api/images');
-      if (!res.ok) {
-        if (res.status === 401) {
-          router.push('/login');
-          return;
-        }
-        throw new Error(`Failed to load images (HTTP ${res.status})`);
+
+      const [imgRes, vidRes] = await Promise.all([
+        fetch('/api/images'),
+        fetch('/api/videos'),
+      ]);
+
+      if (imgRes.status === 401 || vidRes.status === 401) {
+        router.push('/login');
+        return;
       }
 
-      const data = await res.json();
+      if (!imgRes.ok) {
+        throw new Error(`Failed to load images (HTTP ${imgRes.status})`);
+      }
+
+      const data = await imgRes.json();
       const rawImages: any[] = data.images || [];
 
-      const mapped: FavoritePhoto[] = rawImages.map((img: any) => {
+      const mappedImages: FavoritePhoto[] = rawImages.map((img: any) => {
         const d = new Date(img.createdAt);
         const cleanName = (img.originalFilename || 'Memory').replace(
           /\.[^/.]+$/,
@@ -184,11 +226,53 @@ export default function FavoritesPage() {
           width: img.width,
           height: img.height,
           rawDate: d,
+          mediaType: 'photo' as const,
         };
       });
 
-      mapped.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
-      setAllPhotos(mapped);
+      let mappedVideos: FavoritePhoto[] = [];
+      if (vidRes.ok) {
+        const vidData = await vidRes.json();
+        const rawVideos: any[] = vidData.videos || [];
+
+        mappedVideos = rawVideos.map((v: any) => {
+          const d = new Date(v.createdAt);
+          const cleanName = (v.originalFilename || 'Video').replace(/\.[^/.]+$/, '');
+          const durationLabel = formatDuration(v.durationSeconds);
+
+          return {
+            id: v.id,
+            src: v.posterUrl,
+            thumbnailSrc: v.posterUrl,
+            previewSrc: v.previewUrl,
+            embedUrl: v.embedUrl,
+            streamVideoId: v.streamVideoId,
+            caption: cleanName,
+            location: 'Bunny Stream CDN',
+            date: d.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            }),
+            time: d.toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            camera: `Bunny Stream • ${durationLabel}`,
+            tags: ['Starred Video', 'HLS Stream'],
+            originalSize: 0,
+            compressedSize: 0,
+            durationSeconds: v.durationSeconds,
+            videoStatus: v.status,
+            rawDate: d,
+            mediaType: 'video' as const,
+          };
+        });
+      }
+
+      const combined = [...mappedImages, ...mappedVideos];
+      combined.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
+      setAllPhotos(combined);
     } catch (err: any) {
       setError(err.message || 'Unable to retrieve photos.');
     } finally {
@@ -411,7 +495,14 @@ export default function FavoritesPage() {
             >
               {filteredPhotos.map((photo, idx) => {
                 const isBeingRemoved = unfavoritingId === photo.id;
+                const isVideo = photo.mediaType === 'video';
+                const isHovered = hoveredVideoId === photo.id;
                 const staggerDelay = Math.min(idx * 35, 300);
+
+                const imageSrc =
+                  isVideo && isHovered && photo.previewSrc
+                    ? photo.previewSrc
+                    : photo.thumbnailSrc || photo.src;
 
                 return (
                   <div
@@ -423,33 +514,82 @@ export default function FavoritesPage() {
                       transition:
                         'opacity 200ms var(--ease-out), transform 200ms var(--ease-out)',
                     }}
-                    onClick={() => setActivePhoto(photo)}
+                    onClick={() => {
+                      if (isVideo) {
+                        setActiveVideo({
+                          id: photo.id,
+                          streamVideoId: photo.streamVideoId || '',
+                          originalFilename: photo.caption,
+                          durationSeconds: photo.durationSeconds || 0,
+                          status: photo.videoStatus || 'ready',
+                          createdAt: photo.rawDate.toISOString(),
+                          posterUrl: photo.src,
+                          previewUrl: photo.previewSrc || '',
+                          hlsUrl: '',
+                          embedUrl: photo.embedUrl || '',
+                        });
+                      } else {
+                        setActivePhoto(photo);
+                      }
+                    }}
+                    onMouseEnter={() => isVideo && setHoveredVideoId(photo.id)}
+                    onMouseLeave={() => isVideo && setHoveredVideoId(null)}
                     className="timeline-card-enter memory-card aspect-[4/3] group cursor-pointer relative block select-none overflow-hidden rounded-2xl border border-white/10"
                   >
-                    <img
-                      src={photo.thumbnailSrc || photo.src}
-                      alt={photo.caption}
-                      loading="lazy"
-                      onError={(e) => {
-                        if (e.currentTarget.src !== photo.src) {
-                          e.currentTarget.src = photo.src;
-                        }
-                      }}
-                      className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-                    />
+                    {/* Real Image or Video Poster / Scrub WebP with Fallback */}
+                    {isVideo && failedMediaIds.has(photo.id) ? (
+                      <div className="w-full h-full bg-gradient-to-br from-[#121626] via-[#090b12] to-black flex flex-col items-center justify-center p-4 text-center select-none">
+                        <div className="w-12 h-12 rounded-2xl bg-[#3b82f6]/20 border border-[#3b82f6]/30 flex items-center justify-center mb-2 shadow-inner">
+                          <Film className="w-6 h-6 text-[#adc6ff]" />
+                        </div>
+                        <span className="text-[11px] text-[#e5e2e1] font-medium truncate max-w-[85%]">{photo.caption}</span>
+                        <span className="text-[10px] text-[#8c909f] font-mono mt-0.5">{formatDuration(photo.durationSeconds || 0)}</span>
+                      </div>
+                    ) : (
+                      <img
+                        src={imageSrc}
+                        alt={photo.caption}
+                        loading="lazy"
+                        onError={(e) => {
+                          if (isVideo) {
+                            setFailedMediaIds((prev) => new Set(prev).add(photo.id));
+                          } else if (e.currentTarget.src !== photo.src) {
+                            e.currentTarget.src = photo.src;
+                          }
+                        }}
+                        className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                      />
+                    )}
+
+                    {/* Video Center Play Indicator */}
+                    {isVideo && (
+                      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                        <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl transition-all duration-300 group-hover:scale-110 group-hover:bg-[#3b82f6]/80 group-hover:border-[#3b82f6]">
+                          <Play className="w-4 h-4 fill-white translate-x-0.5" />
+                        </div>
+                      </div>
+                    )}
 
                     {/* Gradient overlay */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-black/40 p-4 flex flex-col justify-between">
                       {/* Top tags and favorite heart button */}
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-medium bg-black/60 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/10 text-white/90">
-                          {photo.date}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-medium bg-black/60 backdrop-blur-md px-2.5 py-0.5 rounded-full border border-white/10 text-white/90">
+                            {photo.date}
+                          </span>
+                          {isVideo && (
+                            <span className="flex items-center gap-1 text-[10px] font-mono bg-black/60 backdrop-blur-md px-2 py-0.5 rounded-full border border-white/10 text-[#adc6ff]">
+                              <Film className="w-2.5 h-2.5" />
+                              {formatDuration(photo.durationSeconds || 0)}
+                            </span>
+                          )}
+                        </div>
 
                         <button
                           type="button"
                           onClick={(e) => removeFavorite(e, photo.id)}
-                          className="fav-icon p-2 rounded-full bg-black/60 backdrop-blur-md transition-all duration-200 hover:scale-110 pressable text-[#adc6ff]"
+                          className="fav-icon p-2 rounded-full bg-black/60 backdrop-blur-md transition-all duration-200 hover:scale-110 pressable text-[#adc6ff] z-10"
                           title="Remove from favorites"
                         >
                           <Heart className="w-4 h-4 fill-[#adc6ff] text-[#adc6ff]" />
@@ -737,6 +877,19 @@ export default function FavoritesPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Theater Video Player Modal ── */}
+      <VideoPlayerModal
+        video={activeVideo}
+        open={!!activeVideo}
+        onOpenChange={(open) => !open && setActiveVideo(null)}
+        onTrash={handleTrashVideo}
+        onToggleFavorite={(id) => {
+          toggleStoredFavorite(id);
+          setFavoriteIds(getStoredFavorites());
+        }}
+        isFavorite={activeVideo ? favoriteIds.has(activeVideo.id) : false}
+      />
 
       {/* ── Mobile Bottom Navigation ── */}
       <VaultMobileNav currentRoute="favorites" />

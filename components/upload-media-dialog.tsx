@@ -34,6 +34,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { uploadVideoViaTus } from '@/lib/tus-upload';
 
 interface UploadMediaDialogProps {
   open: boolean;
@@ -105,8 +106,11 @@ async function extractFilesFromDataTransfer(
 ): Promise<File[]> {
   const items = dataTransfer.items;
   if (!items || items.length === 0) {
-    return Array.from(dataTransfer.files || []).filter((f) =>
-      f.type.startsWith('image/')
+    return Array.from(dataTransfer.files || []).filter(
+      (f) =>
+        f.type.startsWith('image/') ||
+        f.type.startsWith('video/') ||
+        /\.(jpg|jpeg|png|webp|avif|heic|gif|mp4|mov|webm|mkv|avi|m4v)$/i.test(f.name)
     );
   }
 
@@ -121,7 +125,8 @@ async function extractFilesFromDataTransfer(
           (file: File) => {
             if (
               file.type.startsWith('image/') ||
-              /\.(jpg|jpeg|png|webp|avif|heic|gif)$/i.test(file.name)
+              file.type.startsWith('video/') ||
+              /\.(jpg|jpeg|png|webp|avif|heic|gif|mp4|mov|webm|mkv|avi|m4v)$/i.test(file.name)
             ) {
               files.push(file);
             }
@@ -164,7 +169,12 @@ async function extractFilesFromDataTransfer(
       promises.push(traverseEntry(entry));
     } else {
       const file = item.getAsFile();
-      if (file && file.type.startsWith('image/')) {
+      if (
+        file &&
+        (file.type.startsWith('image/') ||
+          file.type.startsWith('video/') ||
+          /\.(jpg|jpeg|png|webp|gif|heic|mp4|mov|webm|mkv|avi|m4v)$/i.test(file.name))
+      ) {
         files.push(file);
       }
     }
@@ -176,8 +186,11 @@ async function extractFilesFromDataTransfer(
 
   return files.length > 0
     ? files
-    : Array.from(dataTransfer.files || []).filter((f) =>
-        f.type.startsWith('image/')
+    : Array.from(dataTransfer.files || []).filter(
+        (f) =>
+          f.type.startsWith('image/') ||
+          f.type.startsWith('video/') ||
+          /\.(jpg|jpeg|png|webp|gif|heic|mp4|mov|webm|mkv|avi|m4v)$/i.test(f.name)
       );
 }
 
@@ -333,6 +346,85 @@ export function UploadMediaDialog({
   );
 
   /**
+   * Direct TUS resumable upload to Bunny.net Stream for video files
+   */
+  const uploadSingleVideo = useCallback(
+    async (entry: UploadingFile): Promise<string | null> => {
+      if (isCancelledRef.current) {
+        updateFile(entry.id, { status: 'cancelled', progress: 0 });
+        return null;
+      }
+
+      const { id, file } = entry;
+
+      try {
+        updateFile(id, {
+          status: 'uploading',
+          progress: 5,
+          errorMessage: undefined,
+        });
+
+        // 1. Allocate video slot on Bunny.net Stream
+        const initRes = await fetch('/api/videos/create', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, sizeBytes: file.size }),
+        });
+
+        if (!initRes.ok) {
+          const errData = await initRes.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${initRes.status}`);
+        }
+
+        const initData = await initRes.json();
+
+        // 2. Direct TUS Edge Upload with progress reporting
+        await uploadVideoViaTus({
+          uploadEndpoint: initData.uploadEndpoint,
+          libraryId: String(initData.libraryId),
+          videoId: initData.videoId,
+          authorizationSignature: initData.authorizationSignature,
+          authorizationExpire: initData.authorizationExpire,
+          file,
+          onProgress: (percent) => {
+            if (isCancelledRef.current) return;
+            updateFile(id, {
+              progress: Math.max(5, Math.min(99, percent)),
+              status: 'uploading',
+            });
+          },
+        });
+
+        if (isCancelledRef.current) {
+          updateFile(id, { status: 'cancelled', progress: 0 });
+          return null;
+        }
+
+        // 3. Mark complete
+        updateFile(id, {
+          status: 'complete',
+          progress: 100,
+          uploadedPhotoId: initData.id,
+          errorMessage: undefined,
+        });
+
+        onUploadComplete?.();
+        window.dispatchEvent(new Event('vault-storage-updated'));
+
+        return initData.id;
+      } catch (err: any) {
+        console.error(`[uploadSingleVideo] Failed to upload ${file.name}:`, err);
+        updateFile(id, {
+          status: 'error',
+          errorMessage: err.message || 'Video upload failed',
+        });
+        return null;
+      }
+    },
+    [updateFile]
+  );
+
+  /**
    * Concurrency worker pool runner: ensures max 3 parallel uploads with auto-pause
    */
   const runWorkerPool = useCallback(
@@ -360,7 +452,11 @@ export function UploadMediaDialog({
           if (!current) break;
 
           activeWorkersCountRef.current++;
-          await uploadSinglePhoto(current);
+          if (current.type === 'video') {
+            await uploadSingleVideo(current);
+          } else {
+            await uploadSinglePhoto(current);
+          }
           activeWorkersCountRef.current--;
         }
       };
@@ -371,7 +467,7 @@ export function UploadMediaDialog({
 
       onUploadComplete?.();
     },
-    [uploadSinglePhoto, onUploadComplete]
+    [uploadSinglePhoto, uploadSingleVideo, onUploadComplete]
   );
 
   /**
@@ -382,16 +478,17 @@ export function UploadMediaDialog({
       if (!fileList || fileList.length === 0) return;
 
       const newEntries: UploadingFile[] = fileList.map((f, i) => {
+        const isVideo = f.type.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi|m4v)$/i.test(f.name);
         return {
           id: `${Date.now()}-${i}-${Math.random().toString(36).substring(2, 6)}`,
           file: f,
           name: f.name,
           rawSize: f.size,
           originalSize: formatBytes(f.size),
-          type: 'image',
+          type: isVideo ? 'video' : 'image',
           progress: PROGRESS_MAP.queued,
           status: 'queued' as UploadStatus,
-          previewUrl: URL.createObjectURL(f),
+          previewUrl: isVideo ? '' : URL.createObjectURL(f),
         };
       });
 
@@ -641,10 +738,10 @@ export function UploadMediaDialog({
           <div>
             <DialogTitle className="font-[family-name:var(--font-manrope)] text-lg md:text-xl font-bold text-white flex items-center gap-2">
               <Upload className="w-5 h-5 text-[#3b82f6]" />
-              <span>Direct Batch Photo Upload</span>
+              <span>Direct Media Vault Upload</span>
             </DialogTitle>
             <p className="text-xs text-[#8c909f] mt-0.5">
-              Select multiple photos or drop whole folders. Optimized to WebP and saved in Cloudflare R2.
+              Select multiple photos or videos. Photos stored in R2, videos stream via Bunny.net HLS.
             </p>
           </div>
         </DialogHeader>
@@ -654,7 +751,7 @@ export function UploadMediaDialog({
           ref={fileInputRef}
           type="file"
           multiple
-          accept="image/*"
+          accept="image/*,video/*"
           className="hidden"
           onChange={(e) => {
             if (e.target.files) {
@@ -695,10 +792,10 @@ export function UploadMediaDialog({
             </div>
 
             <h3 className="font-[family-name:var(--font-manrope)] text-base font-bold text-white">
-              {dragActive ? 'Release photos or folders' : 'Drop photos or folders here'}
+              {dragActive ? 'Release photos & videos here' : 'Drop photos or videos here'}
             </h3>
             <p className="text-xs text-[#8c909f] mt-1 max-w-sm">
-              Select 20, 50, or 100+ photos at once. JPEG, PNG, WebP, HEIC supported.
+              Upload photos (JPEG, PNG, WebP, HEIC) or videos (MP4, MOV, WebM, MKV).
             </p>
 
             <div className="flex items-center gap-3 mt-5">
@@ -706,7 +803,7 @@ export function UploadMediaDialog({
                 type="button"
                 className="btn-vault text-xs font-semibold px-5 py-2.5 rounded-xl pointer-events-none shadow-[0_0_20px_rgba(59,130,246,0.3)]"
               >
-                Browse Multiple Photos
+                Browse Photos & Videos
               </Button>
             </div>
 
@@ -848,8 +945,13 @@ export function UploadMediaDialog({
                   }`}
                 >
                   {/* Thumbnail */}
-                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-[#1e293b] shrink-0 border border-white/10">
-                    {file.previewUrl ? (
+                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-[#1e293b] shrink-0 border border-white/10 relative">
+                    {file.type === 'video' ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-[#131b2e] text-[#adc6ff]">
+                        <Film className="w-4 h-4 text-[#3b82f6]" />
+                        <span className="text-[8px] font-mono text-[#adc6ff]">VIDEO</span>
+                      </div>
+                    ) : file.previewUrl ? (
                       <img
                         src={file.previewUrl}
                         alt={file.name}

@@ -25,12 +25,15 @@ import {
   FolderPlus,
   Check,
   Trash2,
+  Play,
+  Film,
 } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { VaultSidebar } from '@/components/vault-sidebar';
 import { VaultMobileNav } from '@/components/vault-mobile-nav';
 import { UploadMediaDialog } from '@/components/upload-media-dialog';
+import { VideoPlayerModal, VideoItem } from '@/components/video-player-modal';
 import {
   Dialog,
   DialogContent,
@@ -62,6 +65,24 @@ export interface PhotoItem {
   width?: number;
   height?: number;
   rawDate: Date;
+  mediaType?: 'photo' | 'video';
+  streamVideoId?: string;
+  previewSrc?: string;
+  embedUrl?: string;
+  durationSeconds?: number;
+  videoStatus?: string;
+}
+
+function formatDuration(seconds: number): string {
+  if (!seconds || seconds <= 0) return '00:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  const hrs = Math.floor(mins / 60);
+  if (hrs > 0) {
+    const remainMins = mins % 60;
+    return `${hrs}:${remainMins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 export interface DateGroup {
@@ -83,10 +104,14 @@ export default function TimelinePage() {
   const [search, setSearch] = useState('');
   const [gridDensity, setGridDensity] = useState<'cozy' | 'compact'>('cozy');
   const [activePhoto, setActivePhoto] = useState<PhotoItem | null>(null);
+  const [activeVideo, setActiveVideo] = useState<VideoItem | null>(null);
+  const [hoveredVideoId, setHoveredVideoId] = useState<string | null>(null);
   const [justToggledId, setJustToggledId] = useState<string | null>(null);
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isAddToAlbumOpen, setIsAddToAlbumOpen] = useState(false);
   const [photoToTrash, setPhotoToTrash] = useState<PhotoItem | null>(null);
+  const [videoToTrash, setVideoToTrash] = useState<VideoItem | null>(null);
+  const [failedMediaIds, setFailedMediaIds] = useState<Set<string>>(new Set());
   const [isTrashing, setIsTrashing] = useState(false);
   const [allAlbums, setAllAlbums] = useState<Album[]>([]);
 
@@ -127,6 +152,18 @@ export default function TimelinePage() {
     }
   };
 
+  const handleTrashVideo = async (videoId: string) => {
+    try {
+      const res = await fetch(`/api/videos/${videoId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to move video to trash');
+      setPhotos((prev) => prev.filter((p) => p.id !== videoId));
+      setActiveVideo(null);
+      window.dispatchEvent(new Event('vault-storage-updated'));
+    } catch (err: any) {
+      alert('Failed to trash video: ' + err.message);
+    }
+  };
+
   const handleToggleAlbum = (albumId: string) => {
     if (!activePhoto) return;
     togglePhotoInAlbum(albumId, activePhoto.id);
@@ -157,24 +194,30 @@ export default function TimelinePage() {
     };
   }, []);
 
-  // Fetch real photos from /api/images
+  // Fetch real photos and videos concurrently
   const fetchPhotos = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const res = await fetch('/api/images');
-      if (!res.ok) {
-        if (res.status === 401) {
-          router.push('/login');
-          return;
-        }
-        throw new Error(`Failed to load vault photos (HTTP ${res.status})`);
+
+      const [imgRes, vidRes] = await Promise.all([
+        fetch('/api/images'),
+        fetch('/api/videos'),
+      ]);
+
+      if (imgRes.status === 401 || vidRes.status === 401) {
+        router.push('/login');
+        return;
       }
 
-      const data = await res.json();
-      const rawImages: any[] = data.images || [];
+      if (!imgRes.ok) {
+        throw new Error(`Failed to load vault photos (HTTP ${imgRes.status})`);
+      }
 
-      const mapped: PhotoItem[] = rawImages.map((img: any) => {
+      const imgData = await imgRes.json();
+      const rawImages: any[] = imgData.images || [];
+
+      const mappedImages: PhotoItem[] = rawImages.map((img: any) => {
         const d = new Date(img.createdAt);
         const cleanName = (img.originalFilename || 'Memory').replace(
           /\.[^/.]+$/,
@@ -221,12 +264,61 @@ export default function TimelinePage() {
           width: img.width,
           height: img.height,
           rawDate: d,
+          mediaType: 'photo' as const,
         };
       });
 
-      // Sort by newest date first
-      mapped.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
-      setPhotos(mapped);
+      let mappedVideos: PhotoItem[] = [];
+      if (vidRes.ok) {
+        const vidData = await vidRes.json();
+        const rawVideos: any[] = vidData.videos || [];
+
+        mappedVideos = rawVideos.map((v: any) => {
+          const d = new Date(v.createdAt);
+          const cleanName = (v.originalFilename || 'Video').replace(
+            /\.[^/.]+$/,
+            ''
+          );
+          const durationLabel = formatDuration(v.durationSeconds);
+
+          return {
+            id: v.id,
+            src: v.posterUrl,
+            thumbnailSrc: v.posterUrl,
+            previewSrc: v.previewUrl,
+            embedUrl: v.embedUrl,
+            streamVideoId: v.streamVideoId,
+            caption: cleanName,
+            location: 'Bunny Stream CDN',
+            date: d.toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+              year: 'numeric',
+            }),
+            time: d.toLocaleTimeString('en-US', {
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            camera: `Bunny Stream • ${durationLabel}`,
+            tags: [
+              'Video',
+              'HLS Stream',
+              v.status === 'ready' ? 'Ready' : 'Processing',
+            ],
+            originalSize: 0,
+            compressedSize: 0,
+            durationSeconds: v.durationSeconds,
+            videoStatus: v.status,
+            rawDate: d,
+            mediaType: 'video' as const,
+          };
+        });
+      }
+
+      // Merge and sort newest first
+      const combined = [...mappedImages, ...mappedVideos];
+      combined.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
+      setPhotos(combined);
     } catch (err: any) {
       setError(err.message || 'Unable to connect to vault storage.');
     } finally {
@@ -236,6 +328,10 @@ export default function TimelinePage() {
 
   useEffect(() => {
     fetchPhotos();
+    window.addEventListener('vault-storage-updated', fetchPhotos);
+    return () => {
+      window.removeEventListener('vault-storage-updated', fetchPhotos);
+    };
   }, [fetchPhotos]);
 
   // Toggle favorite with feedback bounce & persistent storage
@@ -250,7 +346,7 @@ export default function TimelinePage() {
     setFavorites(getStoredFavorites());
   };
 
-  // Group photos into DateGroup sections by Month & Year
+  // Group media into DateGroup sections by Month & Year
   const dateGroups = useMemo(() => {
     const groupsMap = new Map<
       string,
@@ -279,8 +375,13 @@ export default function TimelinePage() {
 
   // Dynamic filter pills based on real data
   const filterPills = useMemo(() => {
+    const photoCount = photos.filter((p) => p.mediaType !== 'video').length;
+    const videoCount = photos.filter((p) => p.mediaType === 'video').length;
+
     const pills = [
       { id: 'all', label: `All Memories (${photos.length})` },
+      { id: 'photos', label: `Photos (${photoCount})` },
+      { id: 'videos', label: `Videos (${videoCount})` },
       { id: 'favs', label: `Favorites (${favorites.size})` },
     ];
 
@@ -290,7 +391,7 @@ export default function TimelinePage() {
     });
 
     return pills;
-  }, [photos.length, favorites.size, dateGroups]);
+  }, [photos, favorites.size, dateGroups]);
 
   // Filter groups according to search & active pill
   const filteredGroups = useMemo(() => {
@@ -301,9 +402,14 @@ export default function TimelinePage() {
         const matchingPhotos = group.photos.filter((p) => {
           // Pill filter
           if (activePill === 'favs' && !favorites.has(p.id)) return false;
+          if (activePill === 'photos' && p.mediaType === 'video') return false;
+          if (activePill === 'videos' && p.mediaType !== 'video') return false;
+
           const groupPillId = `${group.month.toLowerCase()}-${group.year}`;
           if (
             activePill !== 'all' &&
+            activePill !== 'photos' &&
+            activePill !== 'videos' &&
             activePill !== 'favs' &&
             activePill !== groupPillId
           ) {
@@ -360,7 +466,7 @@ export default function TimelinePage() {
               <p className="text-[11px] text-[#8c909f] hidden sm:block">
                 {isLoading
                   ? 'Loading memories...'
-                  : `${photos.length} photos preserved in Cloudflare R2`}
+                  : `${photos.filter((p) => p.mediaType !== 'video').length} photos • ${photos.filter((p) => p.mediaType === 'video').length} videos preserved in Cloud Vault & Bunny Stream`}
               </p>
             </div>
           </div>
@@ -568,30 +674,92 @@ export default function TimelinePage() {
                   {group.photos.map((photo, photoIdx) => {
                     const isFav = favorites.has(photo.id);
                     const isBumping = justToggledId === photo.id;
+                    const isVideo = photo.mediaType === 'video';
+                    const isHovered = hoveredVideoId === photo.id;
                     const staggerDelay = Math.min(
                       (groupIdx * 4 + photoIdx) * 35,
                       300
                     );
 
+                    // For video: if hovered and previewSrc is available, show animated preview.webp!
+                    const imageSrc =
+                      isVideo && isHovered && photo.previewSrc
+                        ? photo.previewSrc
+                        : photo.thumbnailSrc || photo.src;
+
                     return (
                       <div
                         key={photo.id}
                         style={{ animationDelay: `${staggerDelay}ms` }}
-                        onClick={() => setActivePhoto(photo)}
+                        onClick={() => {
+                          if (isVideo) {
+                            setActiveVideo({
+                              id: photo.id,
+                              streamVideoId: photo.streamVideoId || '',
+                              originalFilename: photo.caption,
+                              durationSeconds: photo.durationSeconds || 0,
+                              status: photo.videoStatus || 'ready',
+                              createdAt: photo.rawDate.toISOString(),
+                              posterUrl: photo.src,
+                              previewUrl: photo.previewSrc || '',
+                              hlsUrl: '',
+                              embedUrl: photo.embedUrl || '',
+                            });
+                          } else {
+                            setActivePhoto(photo);
+                          }
+                        }}
+                        onMouseEnter={() => isVideo && setHoveredVideoId(photo.id)}
+                        onMouseLeave={() => isVideo && setHoveredVideoId(null)}
                         className="timeline-card-enter memory-card aspect-square group cursor-pointer relative block select-none overflow-hidden rounded-xl border border-white/10"
                       >
-                        {/* Real Image (Lightweight thumbnail with fallback to full-res) */}
-                        <img
-                          src={photo.thumbnailSrc || photo.src}
-                          alt={photo.caption}
-                          loading="lazy"
-                          onError={(e) => {
-                            if (e.currentTarget.src !== photo.src) {
-                              e.currentTarget.src = photo.src;
-                            }
-                          }}
-                          className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-                        />
+                        {/* Real Image or Video Poster / Scrub WebP with Fallback */}
+                        {isVideo && failedMediaIds.has(photo.id) ? (
+                          <div className="w-full h-full bg-gradient-to-br from-[#121626] via-[#090b12] to-black flex flex-col items-center justify-center p-4 text-center select-none">
+                            <div className="w-12 h-12 rounded-2xl bg-[#3b82f6]/20 border border-[#3b82f6]/30 flex items-center justify-center mb-2 shadow-inner">
+                              <Film className="w-6 h-6 text-[#adc6ff]" />
+                            </div>
+                            <span className="text-[11px] text-[#e5e2e1] font-medium truncate max-w-[85%]">{photo.caption}</span>
+                            <span className="text-[10px] text-[#8c909f] font-mono mt-0.5">{formatDuration(photo.durationSeconds || 0)}</span>
+                          </div>
+                        ) : (
+                          <img
+                            src={imageSrc}
+                            alt={photo.caption}
+                            loading="lazy"
+                            referrerPolicy="no-referrer-when-downgrade"
+                            onError={(e) => {
+                              if (isVideo) {
+                                setFailedMediaIds((prev) => new Set(prev).add(photo.id));
+                              } else if (e.currentTarget.src !== photo.src) {
+                                e.currentTarget.src = photo.src;
+                              }
+                            }}
+                            className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                          />
+                        )}
+
+                        {/* Video Duration Badge */}
+                        {isVideo && (
+                          <div className="absolute top-2.5 left-2.5 z-10 flex items-center gap-1.5 bg-black/70 backdrop-blur-md border border-white/15 px-2 py-0.5 rounded-md text-[10px] font-mono text-white font-medium shadow-md">
+                            <Film className="w-2.5 h-2.5 text-[#adc6ff]" />
+                            <span>{formatDuration(photo.durationSeconds || 0)}</span>
+                            {photo.videoStatus === 'processing' && (
+                              <span className="ml-0.5 text-[9px] text-amber-300 bg-amber-950/60 px-1 rounded border border-amber-500/30 animate-pulse">
+                                Encoding
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Video Play Indicator in Center */}
+                        {isVideo && (
+                          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                            <div className="w-10 h-10 rounded-full bg-black/60 backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-xl transition-all duration-300 group-hover:scale-110 group-hover:bg-[#3b82f6]/80 group-hover:border-[#3b82f6]">
+                              <Play className="w-4 h-4 fill-white translate-x-0.5" />
+                            </div>
+                          </div>
+                        )}
 
                         {/* Top Gradient for Favorite Button Visibility */}
                         <div className="absolute top-0 inset-x-0 h-14 bg-gradient-to-b from-black/60 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
@@ -603,7 +771,7 @@ export default function TimelinePage() {
                           aria-label={
                             isFav ? 'Remove from favorites' : 'Add to favorites'
                           }
-                          className={`fav-icon absolute top-2.5 right-2.5 p-2 rounded-full backdrop-blur-md transition-all duration-200 ${
+                          className={`fav-icon absolute top-2.5 right-2.5 p-2 rounded-full backdrop-blur-md transition-all duration-200 z-10 ${
                             isFav
                               ? 'bg-black/60 text-[#adc6ff] opacity-100'
                               : 'bg-black/40 text-white hover:bg-black/60'
@@ -913,6 +1081,19 @@ export default function TimelinePage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* ── Theater Video Player Modal ── */}
+      <VideoPlayerModal
+        video={activeVideo}
+        open={!!activeVideo}
+        onOpenChange={(open) => !open && setActiveVideo(null)}
+        onTrash={handleTrashVideo}
+        onToggleFavorite={(id) => {
+          toggleStoredFavorite(id);
+          setFavorites(getStoredFavorites());
+        }}
+        isFavorite={activeVideo ? favorites.has(activeVideo.id) : false}
+      />
 
       {/* ── Direct Upload Modal ── */}
       <UploadMediaDialog
