@@ -12,7 +12,6 @@ import {
   Upload,
   FolderPlus,
   LogOut,
-  Shield,
   HardDrive,
   ArrowRight,
   User,
@@ -21,6 +20,7 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { UploadMediaDialog } from '@/components/upload-media-dialog';
+import { PhotosLogo } from '@/components/photos-logo';
 import { createClient } from '@/lib/supabase/client';
 import { getStoredFavorites } from '@/lib/favorites';
 import { getStoredAlbums } from '@/lib/albums';
@@ -155,8 +155,8 @@ export function VaultSidebar({
       <aside className="hidden md:flex flex-col w-64 h-screen sticky left-0 top-0 glass-panel border-r border-white/10 p-6 gap-6 z-40 shrink-0">
         {/* Brand */}
         <Link href="/dashboard" className="flex items-center gap-3 group pressable">
-          <div className="w-10 h-10 rounded-xl bg-[#1e293b]/70 border border-white/15 flex items-center justify-center shrink-0 group-hover:border-[#3b82f6]/50 group-hover:bg-[#3b82f6]/10 transition-colors shadow-inner">
-            <Shield className="w-5 h-5 text-[#adc6ff]" />
+          <div className="w-10 h-10 rounded-xl bg-white/[0.04] border border-white/10 flex items-center justify-center shrink-0 group-hover:border-white/20 transition-all shadow-inner">
+            <PhotosLogo className="w-6 h-6" />
           </div>
           <div>
             <h1 className="font-[family-name:var(--font-manrope)] text-base font-bold text-white tracking-tight flex items-center gap-1.5">

@@ -19,6 +19,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { PhotosLogo } from '@/components/photos-logo';
 
 function LoginForm() {
   const router = useRouter();
@@ -168,9 +169,9 @@ function LoginForm() {
 
       {/* Main card */}
       <div className="relative z-10 w-full max-w-[460px] glass-card rounded-2xl p-8 sm:p-10 flex flex-col items-center text-center gap-6 shadow-2xl border border-white/10">
-        {/* Vault Shield Logo */}
-        <div className="w-16 h-16 rounded-2xl bg-[#1a1f2c] border border-blue-500/20 flex items-center justify-center shadow-[0_0_24px_rgba(59,130,246,0.2)]">
-          <Shield className="w-8 h-8 text-[#3b82f6]" />
+        {/* Photos Logo */}
+        <div className="w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center shadow-xl">
+          <PhotosLogo className="w-10 h-10" />
         </div>
 
         {/* Heading */}

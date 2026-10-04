@@ -23,6 +23,7 @@ import { Button } from '@/components/ui/button';
 import { VaultSidebar } from '@/components/vault-sidebar';
 import { VaultMobileNav } from '@/components/vault-mobile-nav';
 import { UploadMediaDialog } from '@/components/upload-media-dialog';
+import { PhotosLogo } from '@/components/photos-logo';
 import { getStoredAlbums } from '@/lib/albums';
 import { getStoredFavorites } from '@/lib/favorites';
 
@@ -159,8 +160,9 @@ export default function DashboardPage() {
       <main className="flex-1 overflow-y-auto bg-[#0a0a0a] flex flex-col">
         {/* Mobile Header */}
         <header className="md:hidden sticky top-0 z-40 glass-panel border-b border-white/10 px-4 py-3.5 flex justify-between items-center backdrop-blur-xl">
-          <Link href="/dashboard" className="font-[family-name:var(--font-manrope)] text-lg font-bold text-[#adc6ff]">
-            Photos
+          <Link href="/dashboard" className="font-[family-name:var(--font-manrope)] text-lg font-bold text-white flex items-center gap-2">
+            <PhotosLogo className="w-5 h-5" />
+            <span>Photos</span>
           </Link>
           <div className="flex items-center gap-2">
             <Button

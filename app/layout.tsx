@@ -20,6 +20,13 @@ export const metadata: Metadata = {
     template: "%s | Photos",
   },
   description: "Secure, private cloud photo and streaming video vault",
+  icons: {
+    icon: [
+      { url: "/icon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico" },
+    ],
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

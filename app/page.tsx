@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { Shield, Play, Plus, Sparkles, BookImage, Heart } from "lucide-react";
+import { PhotosLogo } from "@/components/photos-logo";
 
 export const metadata: Metadata = {
   title: "Photos — Private Cloud Photo & Video Vault",
@@ -61,8 +62,8 @@ export default function Home() {
 
       {/* Header */}
       <div className="relative z-10 text-center mb-12">
-        <div className="w-16 h-16 rounded-2xl bg-[#201f1f] border border-white/5 flex items-center justify-center mx-auto mb-6">
-          <Shield className="w-8 h-8 text-[#3b82f6]" />
+        <div className="w-16 h-16 rounded-2xl bg-white/[0.04] border border-white/10 flex items-center justify-center mx-auto mb-6 shadow-xl">
+          <PhotosLogo className="w-10 h-10" />
         </div>
         <h1
           className="text-5xl font-bold tracking-tight text-[#e5e2e1] mb-3"
