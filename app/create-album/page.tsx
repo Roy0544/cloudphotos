@@ -146,16 +146,20 @@ function CreateAlbumInner() {
     setIsSaving(true);
 
     try {
+      const chosenPhoto =
+        photos.find((p) => p.id === coverPhotoId) ||
+        photos.find((p) => selectedPhotos.has(p.id)) ||
+        photos[0];
+
+      const chosenCoverId = chosenPhoto?.id;
       const chosenCover =
-        photos.find((p) => p.id === coverPhotoId)?.url ||
-        photos.find((p) => selectedPhotos.has(p.id))?.url ||
-        photos[0]?.url ||
-        '';
+        chosenPhoto?.url || (chosenCoverId ? `/api/images/${chosenCoverId}/view` : '');
 
       createAlbum({
         title: title.trim() || 'Untitled Vault Album',
         description: description.trim(),
         coverPhotoUrl: chosenCover,
+        coverPhotoId: chosenCoverId,
         photoIds: Array.from(selectedPhotos),
         privacy,
       });

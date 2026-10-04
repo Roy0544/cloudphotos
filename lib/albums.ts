@@ -5,6 +5,7 @@ export interface Album {
   title: string;
   description: string;
   coverPhotoUrl: string;
+  coverPhotoId?: string;
   photoIds: string[];
   createdAt: string;
   updatedAt: string;
@@ -39,16 +40,19 @@ export function createAlbum(data: {
   title: string;
   description: string;
   coverPhotoUrl: string;
+  coverPhotoId?: string;
   photoIds: string[];
   privacy: 'family' | 'private';
 }): Album {
   const current = getStoredAlbums();
   const now = new Date().toISOString();
+  const coverId = data.coverPhotoId || (data.photoIds.length > 0 ? data.photoIds[0] : undefined);
   const newAlbum: Album = {
     id: `album-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
     title: data.title.trim() || 'Untitled Album',
     description: data.description.trim(),
     coverPhotoUrl: data.coverPhotoUrl,
+    coverPhotoId: coverId,
     photoIds: data.photoIds,
     createdAt: now,
     updatedAt: now,
@@ -78,6 +82,7 @@ export function addPhotosToAlbum(albumId: string, photoIds: string[]): Album | n
   const mergedIds = Array.from(new Set([...existing.photoIds, ...photoIds]));
   const updatedAlbum: Album = {
     ...existing,
+    coverPhotoId: existing.coverPhotoId || (mergedIds.length > 0 ? mergedIds[0] : undefined),
     photoIds: mergedIds,
     updatedAt: new Date().toISOString(),
   };
@@ -96,9 +101,35 @@ export function removePhotoFromAlbum(albumId: string, photoId: string): Album | 
   if (index === -1) return null;
 
   const existing = current[index];
+  const remainingIds = existing.photoIds.filter((id) => id !== photoId);
   const updatedAlbum: Album = {
     ...existing,
-    photoIds: existing.photoIds.filter((id) => id !== photoId),
+    coverPhotoId:
+      existing.coverPhotoId === photoId
+        ? remainingIds[0] || undefined
+        : existing.coverPhotoId,
+    photoIds: remainingIds,
+    updatedAt: new Date().toISOString(),
+  };
+
+  current[index] = updatedAlbum;
+  saveStoredAlbums([...current]);
+  return updatedAlbum;
+}
+
+/**
+ * Set a specific photo as the album cover.
+ */
+export function setAlbumCover(albumId: string, photoId: string): Album | null {
+  const current = getStoredAlbums();
+  const index = current.findIndex((a) => a.id === albumId);
+  if (index === -1) return null;
+
+  const existing = current[index];
+  const updatedAlbum: Album = {
+    ...existing,
+    coverPhotoId: photoId,
+    coverPhotoUrl: `/api/images/${photoId}/view`,
     updatedAt: new Date().toISOString(),
   };
 
@@ -126,6 +157,10 @@ export function togglePhotoInAlbum(
 
   const updatedAlbum: Album = {
     ...existing,
+    coverPhotoId:
+      existing.coverPhotoId === photoId && hasPhoto
+        ? newPhotoIds[0] || undefined
+        : existing.coverPhotoId || (newPhotoIds.length > 0 ? newPhotoIds[0] : undefined),
     photoIds: newPhotoIds,
     updatedAt: new Date().toISOString(),
   };

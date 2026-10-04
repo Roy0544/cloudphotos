@@ -24,6 +24,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Check,
+  Star,
 } from 'lucide-react';
 import { VaultSidebar } from '@/components/vault-sidebar';
 import { VaultMobileNav } from '@/components/vault-mobile-nav';
@@ -39,6 +40,7 @@ import {
   deleteAlbum,
   addPhotosToAlbum,
   removePhotoFromAlbum,
+  setAlbumCover,
   Album,
 } from '@/lib/albums';
 
@@ -59,7 +61,7 @@ export default function AlbumsPage() {
     new Map()
   );
   const [search, setSearch] = useState('');
-  const [activeAlbum, setActiveAlbum] = useState<Album | null>(null);
+  const [activeAlbumId, setActiveAlbumId] = useState<string | null>(null);
   const [activePhoto, setActivePhoto] = useState<RealPhoto | null>(null);
   const [albumToDelete, setAlbumToDelete] = useState<string | null>(null);
   const [isAddPhotosOpen, setIsAddPhotosOpen] = useState(false);
@@ -67,17 +69,11 @@ export default function AlbumsPage() {
     new Set()
   );
 
-  // Sync albums from storage
+  // Sync albums from storage without dependency loop
   const syncAlbums = useCallback(() => {
     const loaded = getStoredAlbums();
     setAlbums(loaded);
-    if (activeAlbum) {
-      const refreshed = loaded.find((a) => a.id === activeAlbum.id);
-      if (refreshed) {
-        setActiveAlbum(refreshed);
-      }
-    }
-  }, [activeAlbum]);
+  }, []);
 
   useEffect(() => {
     syncAlbums();
@@ -87,6 +83,12 @@ export default function AlbumsPage() {
       window.removeEventListener('vault-albums-updated', handleUpdate);
     };
   }, [syncAlbums]);
+
+  // Derive activeAlbum cleanly from albums and activeAlbumId
+  const activeAlbum = useMemo(() => {
+    if (!activeAlbumId) return null;
+    return albums.find((a) => a.id === activeAlbumId) || null;
+  }, [albums, activeAlbumId]);
 
   // Fetch real photos so we can display album photo grids
   useEffect(() => {
@@ -117,11 +119,35 @@ export default function AlbumsPage() {
       .catch((err) => console.error('Failed to load photos map:', err));
   }, []);
 
+  // Robust album cover resolver
+  const getAlbumCoverUrl = useCallback(
+    (album: Album): string | null => {
+      // 1. If album has a designated coverPhotoId, find it or use its view endpoint
+      if (album.coverPhotoId) {
+        const photo = allPhotosMap.get(album.coverPhotoId);
+        if (photo?.url) return photo.url;
+        return `/api/images/${album.coverPhotoId}/view`;
+      }
+      // 2. If album has photos in photoIds, use the first photo
+      if (album.photoIds && album.photoIds.length > 0) {
+        const firstPhoto = allPhotosMap.get(album.photoIds[0]);
+        if (firstPhoto?.url) return firstPhoto.url;
+        return `/api/images/${album.photoIds[0]}/view`;
+      }
+      // 3. If album.coverPhotoUrl exists, use it
+      if (album.coverPhotoUrl) {
+        return album.coverPhotoUrl;
+      }
+      return null;
+    },
+    [allPhotosMap]
+  );
+
   const handleDeleteAlbum = (id: string) => {
     deleteAlbum(id);
     syncAlbums();
-    if (activeAlbum?.id === id) {
-      setActiveAlbum(null);
+    if (activeAlbumId === id) {
+      setActiveAlbumId(null);
     }
     setAlbumToDelete(null);
   };
@@ -133,23 +159,22 @@ export default function AlbumsPage() {
 
   const handleConfirmAddPhotos = () => {
     if (!activeAlbum || selectedPhotoIdsToAdd.size === 0) return;
-    const updated = addPhotosToAlbum(
+    addPhotosToAlbum(
       activeAlbum.id,
       Array.from(selectedPhotoIdsToAdd)
     );
-    if (updated) {
-      setActiveAlbum(updated);
-      syncAlbums();
-    }
+    syncAlbums();
     setIsAddPhotosOpen(false);
   };
 
   const handleRemovePhoto = (albumId: string, photoId: string) => {
-    const updated = removePhotoFromAlbum(albumId, photoId);
-    if (updated) {
-      setActiveAlbum(updated);
-      syncAlbums();
-    }
+    removePhotoFromAlbum(albumId, photoId);
+    syncAlbums();
+  };
+
+  const handleSetCover = (albumId: string, photoId: string) => {
+    setAlbumCover(albumId, photoId);
+    syncAlbums();
   };
 
   const filteredAlbums = useMemo(() => {
@@ -292,21 +317,37 @@ export default function AlbumsPage() {
                   >
                     {/* Album Cover Art */}
                     <div
-                      onClick={() => setActiveAlbum(album)}
+                      onClick={() => setActiveAlbumId(album.id)}
                       className="relative aspect-[16/10] cursor-pointer overflow-hidden bg-[#161821] select-none"
                     >
-                      {album.coverPhotoUrl ? (
-                        <img
-                          src={album.coverPhotoUrl}
-                          alt={album.title}
-                          loading="lazy"
-                          className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-[#8c909f]">
-                          <Images className="w-10 h-10 opacity-40" />
-                        </div>
-                      )}
+                      {(() => {
+                        const coverUrl = getAlbumCoverUrl(album);
+                        return coverUrl ? (
+                          <img
+                            src={coverUrl}
+                            alt={album.title}
+                            loading="lazy"
+                            onError={(e) => {
+                              const fallbackId =
+                                album.coverPhotoId || album.photoIds?.[0];
+                              if (fallbackId) {
+                                const fallback = `/api/images/${fallbackId}/view`;
+                                if (
+                                  e.currentTarget.src !==
+                                  window.location.origin + fallback
+                                ) {
+                                  e.currentTarget.src = fallback;
+                                }
+                              }
+                            }}
+                            className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[#8c909f]">
+                            <Images className="w-10 h-10 opacity-40" />
+                          </div>
+                        );
+                      })()}
 
                       {/* Top Badges */}
                       <div className="absolute top-3 inset-x-3 flex items-center justify-between pointer-events-none z-10">
@@ -338,7 +379,7 @@ export default function AlbumsPage() {
                     <div className="p-4 flex flex-col gap-2">
                       <div className="flex items-start justify-between gap-2">
                         <div
-                          onClick={() => setActiveAlbum(album)}
+                          onClick={() => setActiveAlbumId(album.id)}
                           className="cursor-pointer"
                         >
                           <h3 className="font-[family-name:var(--font-manrope)] text-base font-bold text-white group-hover:text-[#adc6ff] transition-colors line-clamp-1">
@@ -370,7 +411,7 @@ export default function AlbumsPage() {
 
                         <button
                           type="button"
-                          onClick={() => setActiveAlbum(album)}
+                          onClick={() => setActiveAlbumId(album.id)}
                           className="text-[#adc6ff] hover:text-white font-medium flex items-center gap-1 pressable"
                         >
                           <span>Open</span>
@@ -389,98 +430,223 @@ export default function AlbumsPage() {
       {/* ── Album Photos Inspector Modal ── */}
       <Dialog
         open={!!activeAlbum}
-        onOpenChange={(open) => !open && setActiveAlbum(null)}
+        onOpenChange={(open) => !open && setActiveAlbumId(null)}
       >
         <DialogContent className="max-w-5xl bg-[#121212]/95 backdrop-blur-2xl border-white/10 text-[#e5e2e1] p-6 rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
-          <DialogHeader className="flex flex-row items-center justify-between pb-3 border-b border-white/10 space-y-0">
-            <div>
-              <DialogTitle className="font-[family-name:var(--font-manrope)] text-xl font-bold text-white flex items-center gap-2.5">
-                <Images className="w-5 h-5 text-[#3b82f6]" />
-                <span>{activeAlbum?.title}</span>
-              </DialogTitle>
-              {activeAlbum?.description && (
-                <p className="text-xs text-[#8c909f] mt-0.5">
-                  {activeAlbum.description}
-                </p>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2.5">
-              <Button
-                onClick={handleOpenAddPhotos}
-                className="btn-vault text-xs rounded-xl px-3.5 py-1.5 font-semibold flex items-center gap-1.5 shadow-[0_0_15px_rgba(59,130,246,0.3)] pressable"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Photos</span>
-              </Button>
-
-              <span className="text-xs font-mono bg-[#3b82f6]/20 text-[#adc6ff] border border-[#3b82f6]/30 px-3 py-1 rounded-full">
-                {activeAlbum?.photoIds.length}{' '}
-                {activeAlbum?.photoIds.length === 1 ? 'photo' : 'photos'}
-              </span>
-            </div>
+          <DialogHeader className="sr-only">
+            <DialogTitle>{activeAlbum?.title || 'Album Details'}</DialogTitle>
           </DialogHeader>
 
-          {/* Grid of photos in active album */}
-          <div className="flex-1 overflow-y-auto py-4">
-            {activeAlbum && activeAlbum.photoIds.length === 0 ? (
-              <div className="py-16 text-center text-xs text-[#8c909f] flex flex-col items-center justify-center gap-3">
-                <p>No photos in this album yet.</p>
-                <Button
-                  onClick={handleOpenAddPhotos}
-                  className="btn-vault text-xs rounded-xl px-4 py-2 flex items-center gap-1.5"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Add Photos Now</span>
-                </Button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-                {activeAlbum?.photoIds.map((photoId) => {
-                  const photo = allPhotosMap.get(photoId);
-                  if (!photo) return null;
-
-                  return (
-                    <div
-                      key={photo.id}
-                      onClick={() => setActivePhoto(photo)}
-                      className="aspect-square relative rounded-xl overflow-hidden cursor-pointer group border border-white/10 hover:border-white/30 transition-all select-none"
-                    >
+          {activeAlbum && (
+            <>
+              {/* Header Hero Banner with Album Cover */}
+              <div className="relative rounded-2xl overflow-hidden border border-white/10 bg-gradient-to-br from-[#1a1c24] to-[#12141a] p-4 flex flex-col sm:flex-row items-center gap-4 shrink-0 shadow-lg">
+                {/* Cover Thumbnail */}
+                <div className="relative w-full sm:w-36 h-28 shrink-0 rounded-xl overflow-hidden bg-black/60 border border-white/10 group shadow-inner">
+                  {(() => {
+                    const coverUrl = getAlbumCoverUrl(activeAlbum);
+                    return coverUrl ? (
                       <img
-                        src={photo.url}
-                        alt={photo.name}
+                        src={coverUrl}
+                        alt={activeAlbum.title}
                         onError={(e) => {
-                          if (e.currentTarget.src !== window.location.origin + photo.viewUrl) {
-                            e.currentTarget.src = photo.viewUrl;
+                          const fallbackId =
+                            activeAlbum.coverPhotoId || activeAlbum.photoIds?.[0];
+                          if (fallbackId) {
+                            const fallback = `/api/images/${fallbackId}/view`;
+                            if (
+                              e.currentTarget.src !==
+                              window.location.origin + fallback
+                            ) {
+                              e.currentTarget.src = fallback;
+                            }
                           }
                         }}
-                        loading="lazy"
-                        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                        className="w-full h-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-between">
-                        <div className="flex justify-end">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (activeAlbum) handleRemovePhoto(activeAlbum.id, photo.id);
-                            }}
-                            className="bg-black/60 hover:bg-red-600/80 text-white/80 hover:text-white p-1 rounded-md transition-colors"
-                            title="Remove from album"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                        <p className="text-[10px] text-white font-medium truncate">
-                          {photo.name}
-                        </p>
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-[#8c909f]">
+                        <Images className="w-8 h-8 opacity-40" />
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })()}
+                  <div className="absolute top-2 left-2 bg-black/70 backdrop-blur-md px-2 py-0.5 rounded text-[9px] font-semibold text-white/95 flex items-center gap-1 border border-white/15">
+                    <Star className="w-2.5 h-2.5 text-amber-400 fill-amber-400" />
+                    <span>Cover</span>
+                  </div>
+                </div>
+
+                {/* Album Details */}
+                <div className="flex-1 min-w-0 text-center sm:text-left">
+                  <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
+                    <h2 className="font-[family-name:var(--font-manrope)] text-xl font-bold text-white tracking-tight truncate">
+                      {activeAlbum.title}
+                    </h2>
+                    <span className="text-[11px] font-semibold bg-[#3b82f6]/20 text-[#adc6ff] border border-[#3b82f6]/30 px-2.5 py-0.5 rounded-full font-mono">
+                      {activeAlbum.photoIds.length}{' '}
+                      {activeAlbum.photoIds.length === 1 ? 'photo' : 'photos'}
+                    </span>
+                    <span className="text-[11px] font-semibold bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-full text-white/80 flex items-center gap-1">
+                      {activeAlbum.privacy === 'family' ? (
+                        <>
+                          <Users className="w-3 h-3 text-[#adc6ff]" />
+                          <span>Family</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3 h-3 text-amber-300" />
+                          <span>Private</span>
+                        </>
+                      )}
+                    </span>
+                  </div>
+
+                  {activeAlbum.description ? (
+                    <p className="text-xs text-[#8c909f] mt-1 line-clamp-2">
+                      {activeAlbum.description}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-[#525764] mt-1 italic">
+                      No description provided
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-center sm:justify-start gap-3 mt-2.5 text-[11px] text-[#8c909f]">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-3 h-3" />
+                      <span>
+                        Created{' '}
+                        {new Date(activeAlbum.createdAt).toLocaleDateString(
+                          'en-US',
+                          {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric',
+                          }
+                        )}
+                      </span>
+                    </span>
+                    <span className="text-white/20 hidden sm:inline">•</span>
+                    <span className="text-[#8c909f] text-[10px] hidden sm:inline">
+                      Hover any photo below to set as cover
+                    </span>
+                  </div>
+                </div>
+
+                {/* Add Photos Button */}
+                <div className="shrink-0 flex items-center gap-2">
+                  <Button
+                    onClick={handleOpenAddPhotos}
+                    className="btn-vault text-xs rounded-xl px-4 py-2 font-semibold flex items-center gap-1.5 shadow-[0_0_15px_rgba(59,130,246,0.3)] pressable"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Photos</span>
+                  </Button>
+                </div>
               </div>
-            )}
-          </div>
+
+              {/* Grid of photos in active album */}
+              <div className="flex-1 overflow-y-auto py-3">
+                {activeAlbum.photoIds.length === 0 ? (
+                  <div className="py-16 text-center text-xs text-[#8c909f] flex flex-col items-center justify-center gap-3">
+                    <p>No photos in this album yet.</p>
+                    <Button
+                      onClick={handleOpenAddPhotos}
+                      className="btn-vault text-xs rounded-xl px-4 py-2 flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Photos Now</span>
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+                    {activeAlbum.photoIds.map((photoId) => {
+                      const photo = allPhotosMap.get(photoId);
+                      if (!photo) return null;
+                      const isCover =
+                        photo.id ===
+                        (activeAlbum.coverPhotoId || activeAlbum.photoIds[0]);
+
+                      return (
+                        <div
+                          key={photo.id}
+                          onClick={() => setActivePhoto(photo)}
+                          className={`aspect-square relative rounded-xl overflow-hidden cursor-pointer group border select-none transition-all ${
+                            isCover
+                              ? 'border-amber-400/50 shadow-[0_0_12px_rgba(251,191,36,0.2)]'
+                              : 'border-white/10 hover:border-white/30'
+                          }`}
+                        >
+                          <img
+                            src={photo.url}
+                            alt={photo.name}
+                            onError={(e) => {
+                              if (
+                                e.currentTarget.src !==
+                                window.location.origin + photo.viewUrl
+                              ) {
+                                e.currentTarget.src = photo.viewUrl;
+                              }
+                            }}
+                            loading="lazy"
+                            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                          />
+
+                          {/* Cover Badge */}
+                          {isCover && (
+                            <div className="absolute top-2 left-2 z-10 bg-black/80 backdrop-blur-md px-1.5 py-0.5 rounded text-[9px] font-semibold text-amber-300 flex items-center gap-1 border border-amber-400/40">
+                              <Star className="w-2.5 h-2.5 fill-amber-300" />
+                              <span>Cover</span>
+                            </div>
+                          )}
+
+                          {/* Hover Overlay with Action Buttons */}
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-black/60 opacity-0 group-hover:opacity-100 transition-opacity p-2 flex flex-col justify-between">
+                            <div className="flex items-center justify-between">
+                              {/* Set as Cover button */}
+                              {!isCover ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSetCover(activeAlbum.id, photo.id);
+                                  }}
+                                  className="bg-black/70 hover:bg-amber-500/80 text-white/90 hover:text-white px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1 transition-colors border border-white/20"
+                                  title="Set as album cover"
+                                >
+                                  <Star className="w-3 h-3" />
+                                  <span>Cover</span>
+                                </button>
+                              ) : (
+                                <span />
+                              )}
+
+                              {/* Remove from album button */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRemovePhoto(activeAlbum.id, photo.id);
+                                }}
+                                className="bg-black/70 hover:bg-red-600/80 text-white/90 hover:text-white p-1 rounded-md transition-colors border border-white/20"
+                                title="Remove from album"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+
+                            <p className="text-[10px] text-white font-medium truncate">
+                              {photo.name}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 
