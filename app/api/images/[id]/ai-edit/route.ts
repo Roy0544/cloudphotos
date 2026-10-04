@@ -10,10 +10,49 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 const TRANSFORM_MAP: Record<string, string> = {
+  // ── 1. AI Neural & Generative ──────────────────────────────
   'bg-remove': 'tr:e-bgremove',
-  'clarity': 'tr:e-contrast-15,e-sharpen-25,q-95',
+  'magic-enhance': 'tr:e-contrast-auto,e-sharpen-auto,q-95',
+  'face-crop': 'tr:fo-face,w-800,h-800,c-maintain_ratio',
+  'smart-focus': 'tr:fo-auto,w-800,h-800,c-maintain_ratio',
+  'drop-shadow': 'tr:e-shadow-soft',
+
+  // ── 2. Aesthetic Film & Color Grading ──────────────────────
+  'vintage-90s': 'tr:e-vintage,e-contrast-10,q-90',
+  'golden-hour': 'tr:e-contrast-5,e-sharpen-10,e-tint-warm,q-90',
+  'noir-bw': 'tr:e-grayscale,e-contrast-30,e-sharpen-20,q-90',
+  'vignette': 'tr:e-vignette-25,e-contrast-10,q-90',
+  'sepia': 'tr:e-sepia,e-contrast-15,q-90',
+  'duotone': 'tr:e-duotone-0000FF-FF5500,q-90',
   'warmth': 'tr:e-contrast-5,e-sharpen-10,q-90',
   'monochrome': 'tr:e-contrast-20,e-grayscale,q-90',
+
+  // ── 3. Smart Framing & Canvases ────────────────────────────
+  'canvas-story': 'tr:w-1080,h-1920,cm-pad_resize,bg-blurred,q-90',
+  'canvas-square': 'tr:w-1080,h-1080,cm-pad_resize,bg-blurred,q-90',
+  'canvas-cinema': 'tr:w-1920,h-1080,cm-pad_resize,bg-blurred,q-90',
+  'polaroid-frame': 'tr:b-20_white,b-bottom-60_white,q-90',
+  'circle-avatar': 'tr:r-max,w-800,h-800,q-90',
+
+  // ── 4. Dynamic Overlays & Stamps ───────────────────────────
+  'retro-date': 'tr:l-text,i-1998-10-04,fs-32,co-FFA500,lx-N30,ly-N30,l-end',
+  'vault-watermark': 'tr:l-text,i-Family%20Vault,fs-36,co-FFFFFF,fo-center,al-0.25,l-end',
+  'geotag-badge': 'tr:l-text,i-Captured%20Moment,fs-24,co-FFFFFF,bg-00000088,pa-12,r-12,lx-24,ly-24,l-end',
+
+  // ── 5. Privacy & Obfuscation ───────────────────────────────
+  'privacy-blur': 'tr:e-blur-30,q-90',
+  'pixelate': 'tr:e-pixelate-20,q-90',
+  'document-scan': 'tr:e-grayscale,e-contrast-60,q-90',
+
+  // ── 6. Pro Quality & Clarity ───────────────────────────────
+  'clarity': 'tr:e-contrast-15,e-sharpen-25,q-95',
+  'ultra-hd': 'tr:e-sharpen-20,q-100',
+  'low-res-thumb': 'tr:w-400,bl-2,q-40',
+
+  // ── 7. Motion & Dynamic Media ──────────────────────────────
+  'animated-webp': 'tr:f-webp,so-0,du-3,q-80',
+  'video-poster': 'tr:so-1,q-95',
+  'fast-motion': 'tr:w-720,h-1280,q-80',
 };
 
 interface RouteParams {
@@ -97,8 +136,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
     tempFileId = tempUpload.fileId;
 
-    // Build transformation URL
-    const rawTransform = TRANSFORM_MAP[transform] || 'tr:e-bgremove';
+    // Build transformation URL (with dynamic customization where applicable)
+    let rawTransform = TRANSFORM_MAP[transform] || 'tr:e-bgremove';
+
+    if (transform === 'retro-date') {
+      const d = new Date(original.created_at || Date.now());
+      const year = String(d.getFullYear()).slice(-2);
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const dateText = `'${year} ${month} ${day}`;
+      rawTransform = `tr:l-text,i-${encodeURIComponent(dateText)},fs-36,co-FFA500,lx-N35,ly-N35,l-end`;
+    } else if (transform === 'geotag-badge') {
+      const label = (original.original_filename || 'Vault Photo')
+        .replace(/\.[^/.]+$/, '')
+        .slice(0, 18);
+      rawTransform = `tr:l-text,i-${encodeURIComponent('📍 ' + label)},fs-24,co-FFFFFF,bg-00000088,pa-14,r-12,lx-25,ly-25,l-end`;
+    }
+
     const transformedUrl = imagekit.url({
       path: tempUpload.filePath,
       transformation: [{ raw: rawTransform }],

@@ -14,6 +14,9 @@ create table if not exists public.albums (
   cover_photo_url text,
   privacy text not null default 'private',
   created_at timestamptz not null default now(),
+
+
+  
   updated_at timestamptz not null default now()
 );
 

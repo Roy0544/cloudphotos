@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useState, useRef, useEffect, useCallback } from 'react';
+import { Suspense, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -20,6 +20,39 @@ import {
   Paintbrush,
   SunMedium,
   RefreshCw,
+  Wand2,
+  UserCheck,
+  Target,
+  Box,
+  Film,
+  Camera,
+  Disc,
+  History,
+  Palette,
+  Crop,
+  Smartphone,
+  Square,
+  Monitor,
+  Image as ImageIcon,
+  CircleDot,
+  Stamp,
+  Clock,
+  ShieldCheck,
+  MapPin,
+  Shield,
+  EyeOff,
+  Grid,
+  FileText,
+  Zap,
+  Award,
+  Cpu,
+  Video,
+  PlayCircle,
+  ImagePlus,
+  FastForward,
+  ChevronDown,
+  ChevronRight,
+  Search,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
@@ -42,44 +75,287 @@ interface RealPhoto {
   date: string;
 }
 
-interface AITool {
-  id: 'bg-remove' | 'clarity' | 'warmth' | 'monochrome';
+export interface AITool {
+  id: string;
   label: string;
-  icon: typeof Layers;
+  icon: any;
   description: string;
   tag: string;
 }
 
-const AI_TOOLS: AITool[] = [
+export interface ToolCategory {
+  id: string;
+  title: string;
+  icon: any;
+  badge: string;
+  color: string;
+  tools: AITool[];
+}
+
+export const TOOL_CATEGORIES: ToolCategory[] = [
   {
-    id: 'bg-remove',
-    label: 'Background Removal',
-    icon: Layers,
-    description: 'Neural alpha cutout with edge and hair detection',
-    tag: 'Alpha AI',
-  },
-  {
-    id: 'clarity',
-    label: 'Neural Clarity & HDR',
+    id: 'neural',
+    title: '1. AI Neural & Generative',
     icon: Sparkles,
-    description: 'Enhance micro-textures, shadow detail & edge sharpness',
-    tag: 'Ultra-HD',
+    badge: 'Neural',
+    color: 'text-blue-400 bg-blue-500/15 border-blue-500/30',
+    tools: [
+      {
+        id: 'bg-remove',
+        label: 'Background Removal',
+        icon: Layers,
+        description: 'Neural alpha cutout with edge and hair detection',
+        tag: 'Alpha AI',
+      },
+      {
+        id: 'magic-enhance',
+        label: '1-Tap Magic Enhance',
+        icon: Wand2,
+        description: 'Auto exposure, color balance & shadow recovery',
+        tag: 'Smart Fix',
+      },
+      {
+        id: 'face-crop',
+        label: 'Smart Face Portrait',
+        icon: UserCheck,
+        description: 'AI facial detection for perfect centered avatar crops',
+        tag: 'Biometric',
+      },
+      {
+        id: 'smart-focus',
+        label: 'Subject & Pet Focus',
+        icon: Target,
+        description: 'Saliency AI centers primary subject automatically',
+        tag: 'Saliency',
+      },
+      {
+        id: 'drop-shadow',
+        label: 'Studio Drop Shadow',
+        icon: Box,
+        description: 'Soft Apple-style floating shadow beneath subject',
+        tag: '3D Depth',
+      },
+    ],
   },
   {
-    id: 'warmth',
-    label: 'Golden Hour Relight',
-    icon: SunMedium,
-    description: 'Directional warmth, tone recovery & soft fill lighting',
-    tag: 'Portrait',
+    id: 'film',
+    title: '2. Aesthetic Film & Grading',
+    icon: Film,
+    badge: 'Cinema',
+    color: 'text-amber-400 bg-amber-500/15 border-amber-500/30',
+    tools: [
+      {
+        id: 'vintage-90s',
+        label: 'Vintage Kodak / Polaroid',
+        icon: Camera,
+        description: 'Nostalgic retro grain, warm saturation & soft highlights',
+        tag: 'Analog',
+      },
+      {
+        id: 'golden-hour',
+        label: 'Golden Hour Relight',
+        icon: SunMedium,
+        description: 'Sunset warmth, honey-toned highlights & ambient glow',
+        tag: 'Sunset',
+      },
+      {
+        id: 'noir-bw',
+        label: 'Dramatic Noir B&W',
+        icon: Paintbrush,
+        description: 'Deep inky blacks, street photography contrast',
+        tag: 'Monochrome',
+      },
+      {
+        id: 'vignette',
+        label: 'Vignette Perimeter Focus',
+        icon: Disc,
+        description: 'Darkened subtle outer perimeter to draw eye to center',
+        tag: 'Optics',
+      },
+      {
+        id: 'sepia',
+        label: 'Sepia Heirloom',
+        icon: History,
+        description: 'Warm antique bronze tone for archival family portraits',
+        tag: 'Historic',
+      },
+      {
+        id: 'duotone',
+        label: 'Duotone Pop Art',
+        icon: Palette,
+        description: 'Stylized two-tone modern gradient mapping',
+        tag: 'Stylized',
+      },
+    ],
   },
   {
-    id: 'monochrome',
-    label: 'Archival Monochrome',
-    icon: Paintbrush,
-    description: 'Deep blacks, tonal recovery & fine grain vintage B&W',
-    tag: 'Fine Art',
+    id: 'canvas',
+    title: '3. Smart Framing & Canvases',
+    icon: Crop,
+    badge: 'Formats',
+    color: 'text-purple-400 bg-purple-500/15 border-purple-500/30',
+    tools: [
+      {
+        id: 'canvas-story',
+        label: 'Phone Story / Wallpaper (9:16)',
+        icon: Smartphone,
+        description: 'Fills vertical screens with ambient blurred background',
+        tag: 'Mobile',
+      },
+      {
+        id: 'canvas-square',
+        label: 'Square Album Cover (1:1)',
+        icon: Square,
+        description: 'Square framing with ambient glass side padding',
+        tag: 'Album',
+      },
+      {
+        id: 'canvas-cinema',
+        label: 'Cinema Landscape (16:9)',
+        icon: Monitor,
+        description: 'Widescreen presentation with blurred ambient fill',
+        tag: 'Widescreen',
+      },
+      {
+        id: 'polaroid-frame',
+        label: 'Classic Polaroid Border',
+        icon: ImageIcon,
+        description: 'Authentic white frame with bottom margin for captions',
+        tag: 'Frame',
+      },
+      {
+        id: 'circle-avatar',
+        label: 'Circular Profile Badge',
+        icon: CircleDot,
+        description: 'Perfect circular crop for avatars and profile icons',
+        tag: 'Avatar',
+      },
+    ],
+  },
+  {
+    id: 'stamps',
+    title: '4. Dynamic Overlays & Stamps',
+    icon: Stamp,
+    badge: 'Overlays',
+    color: 'text-emerald-400 bg-emerald-500/15 border-emerald-500/30',
+    tools: [
+      {
+        id: 'retro-date',
+        label: 'Retro 90s Film Date',
+        icon: Clock,
+        description: 'Amber glowing digital clock stamp burned into bottom corner',
+        tag: 'Retro Clock',
+      },
+      {
+        id: 'vault-watermark',
+        label: 'Vault Copyright Badge',
+        icon: ShieldCheck,
+        description: 'Subtle translucent watermark protecting family memories',
+        tag: 'Security',
+      },
+      {
+        id: 'geotag-badge',
+        label: 'Travel Location Geotag',
+        icon: MapPin,
+        description: 'Sleek frosted pill badge displaying capture location',
+        tag: 'Metadata',
+      },
+    ],
+  },
+  {
+    id: 'privacy',
+    title: '5. Privacy & Obfuscation',
+    icon: Shield,
+    badge: 'Privacy',
+    color: 'text-rose-400 bg-rose-500/15 border-rose-500/30',
+    tools: [
+      {
+        id: 'privacy-blur',
+        label: 'Identity & Privacy Blur',
+        icon: EyeOff,
+        description: 'Heavy Gaussian blur to anonymize sensitive subjects',
+        tag: 'Anonymize',
+      },
+      {
+        id: 'pixelate',
+        label: 'License Plate / Digit Pixelate',
+        icon: Grid,
+        description: 'Pixel mosaic effect for car plates and numbers',
+        tag: 'Mosaic',
+      },
+      {
+        id: 'document-scan',
+        label: 'Document Scan / Redact',
+        icon: FileText,
+        description: 'Ultra-contrast black & white scanner preset for documents',
+        tag: 'Scanner',
+      },
+    ],
+  },
+  {
+    id: 'quality',
+    title: '6. Pro Quality & Clarity',
+    icon: Zap,
+    badge: 'Enhance',
+    color: 'text-cyan-400 bg-cyan-500/15 border-cyan-500/30',
+    tools: [
+      {
+        id: 'clarity',
+        label: 'Neural Clarity & HDR',
+        icon: Sparkles,
+        description: 'Enhance micro-textures, shadow detail & edge sharpness',
+        tag: 'Ultra-HD',
+      },
+      {
+        id: 'ultra-hd',
+        label: 'Lossless Fidelity Boost',
+        icon: Award,
+        description: 'Maximum resolution fidelity preservation with zero noise',
+        tag: 'Master',
+      },
+      {
+        id: 'low-res-thumb',
+        label: 'Fast LQIP Preview',
+        icon: Cpu,
+        description: 'Ultra-fast blurred placeholder for instant page loads',
+        tag: 'Speed',
+      },
+    ],
+  },
+  {
+    id: 'motion',
+    title: '7. Motion & Dynamic Media',
+    icon: Video,
+    badge: 'Motion',
+    color: 'text-violet-400 bg-violet-500/15 border-violet-500/30',
+    tools: [
+      {
+        id: 'animated-webp',
+        label: 'Animated 3s WebP Clip',
+        icon: PlayCircle,
+        description: 'Converts video highlights into a looping motion sticker',
+        tag: 'Loop',
+      },
+      {
+        id: 'video-poster',
+        label: 'Video Poster Extraction',
+        icon: ImagePlus,
+        description: 'Extracts a razor-sharp still photo frame from videos',
+        tag: 'Freeze',
+      },
+      {
+        id: 'fast-motion',
+        label: 'Mobile Downscale Clip',
+        icon: FastForward,
+        description: 'Optimizes video dimensions for fast cellular playback',
+        tag: 'Compress',
+      },
+    ],
   },
 ];
+
+// Flat lookup of all tools for selection convenience
+export const ALL_TOOLS: AITool[] = TOOL_CATEGORIES.flatMap((c) => c.tools);
 
 function AIEditorInner() {
   const router = useRouter();
@@ -95,7 +371,29 @@ function AIEditorInner() {
   const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [selectedTool, setSelectedTool] = useState<AITool>(AI_TOOLS[0]);
+  const [selectedTool, setSelectedTool] = useState<AITool>(ALL_TOOLS[0]);
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
+    neural: true,
+  });
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const toggleCategory = useCallback((catId: string) => {
+    setExpandedCategories((prev) => ({
+      ...prev,
+      [catId]: !prev[catId],
+    }));
+  }, []);
+
+  const expandAll = useCallback(() => {
+    const all: Record<string, boolean> = {};
+    TOOL_CATEGORIES.forEach((c) => (all[c.id] = true));
+    setExpandedCategories(all);
+  }, []);
+
+  const collapseAll = useCallback(() => {
+    setExpandedCategories({});
+  }, []);
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStage, setProcessingStage] = useState('');
   const [editedPhoto, setEditedPhoto] = useState<{
@@ -582,60 +880,162 @@ function AIEditorInner() {
             </div>
           )}
 
-          {/* AI Tools Selection Grid */}
-          <div className="flex flex-col gap-2.5">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#8c909f]">
-              Neural AI Transformations
-            </p>
+          {/* AI Tools Selection Accordion (7 Categories) */}
+          <div className="flex flex-col gap-3">
+            {/* Search and Expand Controls */}
+            <div className="flex flex-col gap-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#8c909f]" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search all 29 tools..."
+                  className="w-full bg-[#1b1f2b]/80 border border-white/10 rounded-xl pl-8 pr-3 py-1.5 text-xs text-white placeholder:text-[#8c909f] focus:outline-none focus:border-[#3b82f6]/60 transition-colors"
+                />
+              </div>
 
-            <div className="grid grid-cols-1 gap-2">
-              {AI_TOOLS.map((tool) => {
-                const isSelected = selectedTool.id === tool.id;
-                const Icon = tool.icon;
+              <div className="flex items-center justify-between text-[11px] text-[#8c909f] px-1">
+                <span>7 Sections ({ALL_TOOLS.length} Presets)</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={expandAll}
+                    className="hover:text-white transition-colors cursor-pointer"
+                  >
+                    Expand All
+                  </button>
+                  <span>•</span>
+                  <button
+                    type="button"
+                    onClick={collapseAll}
+                    className="hover:text-white transition-colors cursor-pointer"
+                  >
+                    Collapse All
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Accordion Categories */}
+            <div className="flex flex-col gap-2.5">
+              {TOOL_CATEGORIES.map((category) => {
+                const isSearching = searchQuery.trim().length > 0;
+                const filteredTools = isSearching
+                  ? category.tools.filter(
+                      (t) =>
+                        t.label.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        t.tag.toLowerCase().includes(searchQuery.toLowerCase())
+                    )
+                  : category.tools;
+
+                if (isSearching && filteredTools.length === 0) return null;
+
+                const isExpanded = isSearching || Boolean(expandedCategories[category.id]);
+                const CatIcon = category.icon;
+                const hasSelectedTool = category.tools.some((t) => t.id === selectedTool.id);
 
                 return (
-                  <button
-                    key={tool.id}
-                    type="button"
-                    disabled={isProcessing}
-                    onClick={() => {
-                      setSelectedTool(tool);
-                      if (tool.id === 'bg-remove') {
-                        setViewBackground('checkerboard');
-                      } else {
-                        setViewBackground('solid');
-                      }
-                    }}
-                    className={`flex items-start gap-3.5 p-3 rounded-xl text-left transition-all border pressable ${
-                      isSelected
-                        ? 'border-[#3b82f6] bg-[#3b82f6]/10 shadow-[0_0_15px_rgba(59,130,246,0.2)]'
-                        : 'border-white/10 hover:border-white/20 hover:bg-white/[0.03]'
+                  <div
+                    key={category.id}
+                    className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
+                      hasSelectedTool
+                        ? 'border-[#3b82f6]/40 bg-[#161922]'
+                        : 'border-white/10 bg-[#141720]/60 hover:border-white/20'
                     }`}
                   >
-                    <div
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                        isSelected
-                          ? 'bg-[#3b82f6] border-[#3b82f6] text-white shadow-md'
-                          : 'bg-[#1e293b] border-white/10 text-[#adc6ff]'
-                      }`}
+                    {/* Dropdown Header Button */}
+                    <button
+                      type="button"
+                      onClick={() => toggleCategory(category.id)}
+                      className="w-full px-3.5 py-3 flex items-center justify-between text-left cursor-pointer group transition-colors"
                     >
-                      <Icon className="w-4 h-4" />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-xs font-bold text-white truncate">
-                          {tool.label}
-                        </span>
-                        <span className="text-[10px] font-mono text-[#adc6ff] bg-[#3b82f6]/15 px-2 py-0.2 rounded-full border border-[#3b82f6]/20">
-                          {tool.tag}
-                        </span>
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div
+                          className={`w-7 h-7 rounded-lg flex items-center justify-center border shrink-0 ${category.color}`}
+                        >
+                          <CatIcon className="w-3.5 h-3.5" />
+                        </div>
+                        <div className="truncate">
+                          <span className="text-xs font-bold text-white tracking-tight group-hover:text-blue-300 transition-colors">
+                            {category.title}
+                          </span>
+                          <span className="text-[10px] text-[#8c909f] ml-2">
+                            ({filteredTools.length})
+                          </span>
+                        </div>
                       </div>
-                      <p className="text-[11px] text-[#8c909f] leading-snug">
-                        {tool.description}
-                      </p>
-                    </div>
-                  </button>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-[10px] font-mono text-[#8c909f] bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/5">
+                          {category.badge}
+                        </span>
+                        <div
+                          className={`text-[#8c909f] transition-transform duration-200 ${
+                            isExpanded ? 'rotate-180 text-white' : 'rotate-0'
+                          }`}
+                        >
+                          <ChevronDown className="w-4 h-4" />
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Collapsible Dropdown Content */}
+                    {isExpanded && (
+                      <div className="px-3 pb-3 pt-1 flex flex-col gap-1.5 border-t border-white/5">
+                        {filteredTools.map((tool) => {
+                          const isSelected = selectedTool.id === tool.id;
+                          const ToolIcon = tool.icon;
+
+                          return (
+                            <button
+                              key={tool.id}
+                              type="button"
+                              disabled={isProcessing}
+                              onClick={() => {
+                                setSelectedTool(tool);
+                                if (tool.id === 'bg-remove' || tool.id === 'circle-avatar') {
+                                  setViewBackground('checkerboard');
+                                } else {
+                                  setViewBackground('solid');
+                                }
+                              }}
+                              className={`flex items-start gap-3 p-2.5 rounded-xl text-left transition-all border cursor-pointer ${
+                                isSelected
+                                  ? 'border-[#3b82f6] bg-[#3b82f6]/15 shadow-[0_0_15px_rgba(59,130,246,0.25)]'
+                                  : 'border-white/5 hover:border-white/15 hover:bg-white/[0.03]'
+                              }`}
+                            >
+                              <div
+                                className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border mt-0.5 ${
+                                  isSelected
+                                    ? 'bg-[#3b82f6] border-[#3b82f6] text-white shadow-md'
+                                    : 'bg-[#1e2433] border-white/10 text-[#adc6ff]'
+                                }`}
+                              >
+                                <ToolIcon className="w-3.5 h-3.5" />
+                              </div>
+
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center justify-between mb-0.5">
+                                  <span className="text-xs font-semibold text-white truncate">
+                                    {tool.label}
+                                  </span>
+                                  <span className="text-[9px] font-mono text-[#adc6ff] bg-[#3b82f6]/15 px-1.5 py-0.2 rounded-full border border-[#3b82f6]/20 shrink-0 ml-1">
+                                    {tool.tag}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-[#8c909f] leading-snug line-clamp-2">
+                                  {tool.description}
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
