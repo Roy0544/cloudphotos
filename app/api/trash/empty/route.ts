@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { deleteFromR2 } from '@/lib/r2';
+import { deleteFromR2, getThumbnailKey } from '@/lib/r2';
 
 export const runtime = 'nodejs';
 
@@ -26,12 +26,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to query trashed photos.' }, { status: 500 });
   }
 
-  // Delete all from R2
+  // Delete all from R2 (main objects + thumbnails)
   for (const item of trashed || []) {
     if (item.r2_key) {
-      await deleteFromR2(item.r2_key).catch((e) =>
-        console.warn('[trash/empty] failed to delete R2 key:', item.r2_key, e)
-      );
+      await Promise.all([
+        deleteFromR2(item.r2_key).catch((e) =>
+          console.warn('[trash/empty] failed to delete R2 key:', item.r2_key, e)
+        ),
+        deleteFromR2(getThumbnailKey(item.r2_key)).catch(() => {}),
+      ]);
     }
   }
 

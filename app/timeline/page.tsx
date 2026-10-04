@@ -50,6 +50,7 @@ import {
 export interface PhotoItem {
   id: string;
   src: string;
+  thumbnailSrc?: string;
   caption: string;
   location: string;
   date: string;
@@ -190,6 +191,11 @@ export default function TimelinePage() {
         return {
           id: img.id,
           src: img.signedUrl || `/api/images/${img.id}/view`,
+          thumbnailSrc:
+            img.thumbnailUrl ||
+            img.thumbnailViewUrl ||
+            img.signedUrl ||
+            `/api/images/${img.id}/view?thumb=true`,
           caption: cleanName,
           location: 'Cloud Vault',
           date: d.toLocaleDateString('en-US', {
@@ -574,11 +580,16 @@ export default function TimelinePage() {
                         onClick={() => setActivePhoto(photo)}
                         className="timeline-card-enter memory-card aspect-square group cursor-pointer relative block select-none overflow-hidden rounded-xl border border-white/10"
                       >
-                        {/* Real Image */}
+                        {/* Real Image (Lightweight thumbnail with fallback to full-res) */}
                         <img
-                          src={photo.src}
+                          src={photo.thumbnailSrc || photo.src}
                           alt={photo.caption}
                           loading="lazy"
+                          onError={(e) => {
+                            if (e.currentTarget.src !== photo.src) {
+                              e.currentTarget.src = photo.src;
+                            }
+                          }}
                           className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
                         />
 
@@ -771,10 +782,8 @@ export default function TimelinePage() {
 
                     {/* Download */}
                     <a
-                      href={activePhoto.src}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      download={`${activePhoto.caption}.webp`}
+                      href={`/api/images/${activePhoto.id}/download`}
+                      download
                       className="inline-flex"
                     >
                       <Button

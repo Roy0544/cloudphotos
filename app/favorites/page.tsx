@@ -49,6 +49,7 @@ import {
 interface FavoritePhoto {
   id: string;
   src: string;
+  thumbnailSrc?: string;
   caption: string;
   location: string;
   date: string;
@@ -153,6 +154,11 @@ export default function FavoritesPage() {
         return {
           id: img.id,
           src: img.signedUrl || `/api/images/${img.id}/view`,
+          thumbnailSrc:
+            img.thumbnailUrl ||
+            img.thumbnailViewUrl ||
+            img.signedUrl ||
+            `/api/images/${img.id}/view?thumb=true`,
           caption: cleanName,
           location: 'Cloud Vault',
           date: d.toLocaleDateString('en-US', {
@@ -421,9 +427,14 @@ export default function FavoritesPage() {
                     className="timeline-card-enter memory-card aspect-[4/3] group cursor-pointer relative block select-none overflow-hidden rounded-2xl border border-white/10"
                   >
                     <img
-                      src={photo.src}
+                      src={photo.thumbnailSrc || photo.src}
                       alt={photo.caption}
                       loading="lazy"
+                      onError={(e) => {
+                        if (e.currentTarget.src !== photo.src) {
+                          e.currentTarget.src = photo.src;
+                        }
+                      }}
                       className="w-full h-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
                     />
 
@@ -595,10 +606,8 @@ export default function FavoritesPage() {
                     </Button>
 
                     <a
-                      href={activePhoto.src}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      download={`${activePhoto.caption}.webp`}
+                      href={`/api/images/${activePhoto.id}/download`}
+                      download
                       className="inline-flex"
                     >
                       <Button

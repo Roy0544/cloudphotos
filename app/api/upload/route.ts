@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
   const inputBuffer = Buffer.from(arrayBuffer);
 
   let compressedBuffer: Buffer;
+  let thumbBuffer: Buffer;
   let width: number | undefined;
   let height: number | undefined;
 
@@ -86,11 +87,28 @@ export async function POST(request: NextRequest) {
     width = metadata.width;
     height = metadata.height;
 
+    // 4A. Full-size optimized WebP
     compressedBuffer = await sharpInstance
+      .clone()
       .webp({
         quality: 82,
         effort: 4,         // balance speed vs compression
         smartSubsample: true,
+      })
+      .toBuffer();
+
+    // 4B. Dedicated lightweight 400px thumbnail for instant grid browsing
+    thumbBuffer = await sharp(inputBuffer)
+      .rotate()
+      .resize({
+        width: 400,
+        height: 400,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .webp({
+        quality: 75,
+        effort: 3,
       })
       .toBuffer();
   } catch (err) {
@@ -101,15 +119,24 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // ── 5. Generate a unique R2 key ───────────────────────────────────────────────
-  const r2Key = `${user.id}/${randomUUID()}.webp`;
+  // ── 5. Generate unique R2 keys ───────────────────────────────────────────────
+  const fileId = randomUUID();
+  const r2Key = `${user.id}/${fileId}.webp`;
+  const thumbR2Key = `${user.id}/${fileId}-thumb.webp`;
 
-  // ── 6. Upload to Cloudflare R2 ────────────────────────────────────────────────
+  // ── 6. Upload both to Cloudflare R2 concurrently ─────────────────────────────
   try {
-    await uploadToR2(r2Key, compressedBuffer, 'image/webp', {
-      'original-filename': encodeURIComponent(originalFilename),
-      'user-id': user.id,
-    });
+    await Promise.all([
+      uploadToR2(r2Key, compressedBuffer, 'image/webp', {
+        'original-filename': encodeURIComponent(originalFilename),
+        'user-id': user.id,
+      }),
+      uploadToR2(thumbR2Key, thumbBuffer, 'image/webp', {
+        'original-filename': encodeURIComponent(`thumb_${originalFilename}`),
+        'user-id': user.id,
+        'variant': 'thumbnail',
+      }),
+    ]);
   } catch (err) {
     console.error('[upload] R2 upload failed:', err);
     return NextResponse.json(
@@ -135,9 +162,9 @@ export async function POST(request: NextRequest) {
     .single();
 
   if (dbError) {
-    // ── 7a. Rollback: delete the R2 object to avoid orphaned storage ──────────
-    await deleteFromR2(r2Key);
-    console.error('[upload] DB insert failed, R2 object rolled back:', dbError);
+    // ── 7a. Rollback: delete both R2 objects to avoid orphaned storage ────────
+    await Promise.all([deleteFromR2(r2Key), deleteFromR2(thumbR2Key)]);
+    console.error('[upload] DB insert failed, R2 objects rolled back:', dbError);
     return NextResponse.json(
       { error: 'Failed to save image metadata. Upload rolled back.' },
       { status: 500 }
@@ -149,9 +176,11 @@ export async function POST(request: NextRequest) {
     {
       id: imageRow.id,
       r2Key: imageRow.r2_key,
+      thumbR2Key,
       originalFilename: imageRow.original_filename,
       originalSizeBytes,
       compressedSizeBytes: compressedBuffer.length,
+      thumbnailSizeBytes: thumbBuffer.length,
       width: imageRow.width,
       height: imageRow.height,
       createdAt: imageRow.created_at,

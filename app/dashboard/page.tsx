@@ -30,6 +30,7 @@ interface DashboardPhoto {
   id: string;
   name: string;
   src: string;
+  thumbnailSrc?: string;
   viewUrl: string;
   date: string;
   sizeBytes: number;
@@ -91,6 +92,11 @@ export default function DashboardPage() {
             id: img.id,
             name: (img.originalFilename || 'Photo').replace(/\.[^/.]+$/, ''),
             src: img.signedUrl || `/api/images/${img.id}/view`,
+            thumbnailSrc:
+              img.thumbnailUrl ||
+              img.thumbnailViewUrl ||
+              img.signedUrl ||
+              `/api/images/${img.id}/view?thumb=true`,
             viewUrl: `/api/images/${img.id}/view`,
             date: d.toLocaleDateString('en-US', {
               month: 'short',
@@ -411,7 +417,7 @@ export default function DashboardPage() {
                     className="aspect-square relative rounded-xl overflow-hidden cursor-pointer group border border-white/10 hover:border-white/30 transition-all select-none bg-black/40 block"
                   >
                     <img
-                      src={photo.src}
+                      src={photo.thumbnailSrc || photo.src}
                       alt={photo.name}
                       onError={(e) => {
                         if (e.currentTarget.src !== window.location.origin + photo.viewUrl) {

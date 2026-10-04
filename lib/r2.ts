@@ -78,3 +78,34 @@ export async function getSignedDownloadUrl(
   });
   return getSignedUrl(r2Client, command, { expiresIn: expiresInSeconds });
 }
+
+/**
+ * Convert an original R2 key into its dedicated thumbnail key.
+ * e.g. "userId/uuid.webp" -> "userId/uuid-thumb.webp"
+ */
+export function getThumbnailKey(r2Key: string): string {
+  if (r2Key.endsWith('.webp')) {
+    return r2Key.replace(/\.webp$/, '-thumb.webp');
+  }
+  const lastDot = r2Key.lastIndexOf('.');
+  if (lastDot === -1) return `${r2Key}-thumb.webp`;
+  return `${r2Key.substring(0, lastDot)}-thumb.webp`;
+}
+
+/**
+ * Generate a short-lived pre-signed URL with Content-Disposition attachment header.
+ * Forces browsers to open a native file download prompt with the actual filename.
+ */
+export async function getSignedDownloadAttachmentUrl(
+  key: string,
+  filename: string,
+  expiresInSeconds = 300
+): Promise<string> {
+  const cleanFilename = filename.replace(/["\r\n]/g, '_');
+  const command = new GetObjectCommand({
+    Bucket: R2_BUCKET,
+    Key: key,
+    ResponseContentDisposition: `attachment; filename="${cleanFilename}"`,
+  });
+  return getSignedUrl(r2Client, command, { expiresIn: expiresInSeconds });
+}

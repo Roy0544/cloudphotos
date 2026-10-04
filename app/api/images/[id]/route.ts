@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getSignedDownloadUrl, deleteFromR2 } from '@/lib/r2';
+import { getSignedDownloadUrl, deleteFromR2, getThumbnailKey } from '@/lib/r2';
 
 export const runtime = 'nodejs';
 
@@ -97,16 +97,18 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
         .select('r2_key')
         .eq('parent_image_id', id);
 
-      // Delete child variant R2 objects
+      // Delete child variant R2 objects and their thumbnails
       for (const child of children || []) {
         if (child.r2_key) {
           await deleteFromR2(child.r2_key);
+          await deleteFromR2(getThumbnailKey(child.r2_key));
         }
       }
 
-      // Delete parent R2 object
+      // Delete parent R2 object and its thumbnail
       if (img.r2_key) {
         await deleteFromR2(img.r2_key);
+        await deleteFromR2(getThumbnailKey(img.r2_key));
       }
 
       // Delete database rows

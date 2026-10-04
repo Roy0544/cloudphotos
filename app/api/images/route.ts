@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getSignedDownloadUrl } from '@/lib/r2';
+import { getSignedDownloadUrl, getThumbnailKey } from '@/lib/r2';
 
 export const runtime = 'nodejs';
 
@@ -37,15 +37,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Failed to fetch images.' }, { status: 500 });
   }
 
-  // ── 4. Generate short-lived signed URLs for each image ────────────────────────
+  // ── 4. Generate short-lived signed URLs for each image & thumbnail ───────────
   const imagesWithUrls = await Promise.all(
     (images ?? []).map(async (img) => {
       let signedUrl: string | null = null;
+      let thumbnailUrl: string | null = null;
+
       try {
         signedUrl = await getSignedDownloadUrl(img.r2_key, 3600); // 1 hour
       } catch (err) {
         console.error('[images] Failed to sign URL for key:', img.r2_key, err);
       }
+
+      try {
+        const thumbKey = getThumbnailKey(img.r2_key);
+        thumbnailUrl = await getSignedDownloadUrl(thumbKey, 3600);
+      } catch {
+        thumbnailUrl = signedUrl;
+      }
+
       return {
         id: img.id,
         r2Key: img.r2_key,
@@ -56,6 +66,10 @@ export async function GET(request: NextRequest) {
         width: img.width,
         height: img.height,
         signedUrl,
+        thumbnailUrl: thumbnailUrl || signedUrl,
+        viewUrl: `/api/images/${img.id}/view`,
+        thumbnailViewUrl: `/api/images/${img.id}/view?thumb=true`,
+        downloadUrl: `/api/images/${img.id}/download`,
         createdAt: img.created_at,
       };
     })

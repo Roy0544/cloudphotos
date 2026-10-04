@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { r2Client, R2_BUCKET } from '@/lib/r2';
+import { r2Client, R2_BUCKET, getThumbnailKey } from '@/lib/r2';
 import { GetObjectCommand } from '@aws-sdk/client-s3';
 
 export const runtime = 'nodejs';
@@ -11,6 +11,7 @@ interface RouteParams {
 
 export async function GET(request: NextRequest, { params }: RouteParams) {
   const { id } = await params;
+  const isThumb = request.nextUrl.searchParams.get('thumb') === 'true';
 
   // ── 1. Authenticate ──────────────────────────────────────────────────────────
   const supabase = await createClient();
@@ -34,14 +35,34 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return NextResponse.json({ error: 'Image not found.' }, { status: 404 });
   }
 
-  // ── 3. Stream the object from R2 ─────────────────────────────────────────────
+  // ── 3. Stream the object from R2 (thumbnail or original) ────────────────────
+  let targetKey = image.r2_key;
+  if (isThumb) {
+    targetKey = getThumbnailKey(image.r2_key);
+  }
+
   try {
-    const r2Response = await r2Client.send(
-      new GetObjectCommand({
-        Bucket: R2_BUCKET,
-        Key: image.r2_key,
-      })
-    );
+    let r2Response;
+    try {
+      r2Response = await r2Client.send(
+        new GetObjectCommand({
+          Bucket: R2_BUCKET,
+          Key: targetKey,
+        })
+      );
+    } catch (err: any) {
+      // If thumbnail requested was not found (e.g. legacy photo), fallback to main photo
+      if (isThumb) {
+        r2Response = await r2Client.send(
+          new GetObjectCommand({
+            Bucket: R2_BUCKET,
+            Key: image.r2_key,
+          })
+        );
+      } else {
+        throw err;
+      }
+    }
 
     if (!r2Response.Body) {
       return NextResponse.json({ error: 'Image data is empty.' }, { status: 404 });

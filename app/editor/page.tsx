@@ -706,10 +706,8 @@ function AIEditorInner() {
 
               <div className="flex gap-2">
                 <a
-                  href={editedPhotoSrc || editedPhoto.viewUrl}
+                  href={`/api/images/${editedPhoto.id}/download`}
                   download={`${selectedPhoto?.name}-ai-${editedPhoto.transform}.webp`}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="flex-1"
                 >
                   <Button className="w-full btn-vault py-5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(59,130,246,0.3)]">

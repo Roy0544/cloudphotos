@@ -129,6 +129,7 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
 
   // ── 6. Optimize and standardize format with Sharp ─────────────────────────
   let finalWebpBuffer: Buffer;
+  let thumbBuffer: Buffer | null = null;
   let width: number | undefined;
   let height: number | undefined;
 
@@ -139,9 +140,23 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     height = metadata.height;
 
     finalWebpBuffer = await sharpInstance
+      .clone()
       .webp({
         quality: 85,
         effort: 4,
+      })
+      .toBuffer();
+
+    thumbBuffer = await sharp(transformedBuffer)
+      .resize({
+        width: 400,
+        height: 400,
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .webp({
+        quality: 75,
+        effort: 3,
       })
       .toBuffer();
   } catch (err: any) {
@@ -149,14 +164,28 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     finalWebpBuffer = transformedBuffer;
   }
 
-  // ── 7. Store AI result in Cloudflare R2 ────────────────────────────────────
-  const newR2Key = `${user.id}/${randomUUID()}-ai-${transform}.webp`;
+  // ── 7. Store AI result and thumbnail in Cloudflare R2 ───────────────────────
+  const fileId = `${randomUUID()}-ai-${transform}`;
+  const newR2Key = `${user.id}/${fileId}.webp`;
+  const newThumbR2Key = `${user.id}/${fileId}-thumb.webp`;
 
   try {
-    await uploadToR2(newR2Key, finalWebpBuffer, 'image/webp', {
-      'parent-id': original.id,
-      'ai-transform': transform,
-    });
+    const uploads = [
+      uploadToR2(newR2Key, finalWebpBuffer, 'image/webp', {
+        'parent-id': original.id,
+        'ai-transform': transform,
+      }),
+    ];
+    if (thumbBuffer) {
+      uploads.push(
+        uploadToR2(newThumbR2Key, thumbBuffer, 'image/webp', {
+          'parent-id': original.id,
+          'ai-transform': transform,
+          'variant': 'thumbnail',
+        })
+      );
+    }
+    await Promise.all(uploads);
   } catch (err: any) {
     console.error('[ai-edit] R2 upload of edited photo failed:', err);
     return NextResponse.json(
@@ -190,8 +219,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     .single();
 
   if (insertError) {
-    // Rollback R2 object on DB insert failure
-    await deleteFromR2(newR2Key);
+    // Rollback both R2 objects on DB insert failure
+    await Promise.all([deleteFromR2(newR2Key), deleteFromR2(newThumbR2Key)]);
     console.error('[ai-edit] Supabase row insert failed, rolled back:', insertError);
     return NextResponse.json(
       { error: 'Failed to record edited photo metadata.' },

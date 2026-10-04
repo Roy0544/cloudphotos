@@ -47,6 +47,7 @@ import {
 interface RealPhoto {
   id: string;
   url: string;
+  thumbnailUrl?: string;
   viewUrl: string;
   name: string;
   date: string;
@@ -102,6 +103,11 @@ export default function AlbumsPage() {
           const p: RealPhoto = {
             id: img.id,
             url: img.signedUrl || `/api/images/${img.id}/view`,
+            thumbnailUrl:
+              img.thumbnailUrl ||
+              img.thumbnailViewUrl ||
+              img.signedUrl ||
+              `/api/images/${img.id}/view?thumb=true`,
             viewUrl: `/api/images/${img.id}/view`,
             name: (img.originalFilename || 'Photo').replace(/\.[^/.]+$/, ''),
             date: d.toLocaleDateString('en-US', {
@@ -578,7 +584,7 @@ export default function AlbumsPage() {
                           }`}
                         >
                           <img
-                            src={photo.url}
+                            src={photo.thumbnailUrl || photo.url}
                             alt={photo.name}
                             onError={(e) => {
                               if (
@@ -702,7 +708,7 @@ export default function AlbumsPage() {
                       }`}
                     >
                       <img
-                        src={photo.url}
+                        src={photo.thumbnailUrl || photo.url}
                         alt={photo.name}
                         onError={(e) => {
                           if (e.currentTarget.src !== window.location.origin + photo.viewUrl) {
@@ -773,9 +779,23 @@ export default function AlbumsPage() {
                   </div>
                 </div>
 
-                <div className="pt-4 border-t border-white/10">
+                <div className="pt-4 border-t border-white/10 flex flex-col gap-2.5">
+                  <a
+                    href={`/api/images/${activePhoto.id}/download`}
+                    download
+                    className="w-full"
+                  >
+                    <Button
+                      variant="outline"
+                      className="w-full glass-button text-xs rounded-xl py-4 font-semibold flex items-center justify-center gap-1.5 border-white/15"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Download Photo</span>
+                    </Button>
+                  </a>
+
                   <Link href={`/editor?photoId=${activePhoto.id}`} className="w-full">
-                    <Button className="w-full btn-vault text-xs rounded-xl py-5 font-semibold flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(59,130,246,0.25)]">
+                    <Button className="w-full btn-vault text-xs rounded-xl py-4 font-semibold flex items-center justify-center gap-1.5 shadow-[0_0_20px_rgba(59,130,246,0.25)]">
                       <Sparkles className="w-3.5 h-3.5" />
                       <span>Edit in AI Studio</span>
                     </Button>
